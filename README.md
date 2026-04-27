@@ -112,6 +112,48 @@ uv run scripts/eval_policy_sim.py \
 
 The script instantiates the same LIBERO runner and dataset from `oat.config.task.policy.libero.libero10` and dumps per-checkpoint statistics plus optional videos to `output/eval/libero10`.
 
+## Adaptive Prefix Evaluation on Synthetic Actions
+
+For a CPU-only study of adaptive prefix depth, use `experiments/run_adaptive_prefix_oat.py`. The script trains a small OAT tokenizer on synthetic action chunks, evaluates fixed `K in {1, 2, 4, 8}`, a random-`K` control, and an adaptive complexity-gated policy, then reports mean/std, confidence intervals, and one-sided non-inferiority tests for reconstruction MSE.
+
+Quick smoke test:
+
+```bash
+python3 -m unittest tests/test_adaptive_prefix_oat.py
+```
+
+Minimal experiment:
+
+```bash
+python experiments/run_adaptive_prefix_oat.py \
+  --num-runs 5 \
+  --epochs 20 \
+  --train-samples 512 \
+  --test-samples 256 \
+  --output-dir output/adaptive_prefix
+```
+
+With ablations:
+
+```bash
+python experiments/run_adaptive_prefix_oat.py \
+  --num-runs 5 \
+  --epochs 20 \
+  --run-ablations \
+  --complexity-metric delta_l2_mean \
+  --threshold-quantiles 0.25 0.5 0.75 \
+  --output-dir output/adaptive_prefix_ablation
+```
+
+Outputs:
+
+- `per_run_metrics.csv`: one row per seed and method with MSE, expected prefix length, runtime, and allocation fractions
+- `adaptive_detail.csv`: per-sample adaptive allocations for visualization and failure-case inspection
+- `summary.json`: aggregate means/stds, confidence intervals, pairwise non-inferiority tests, and plot paths
+- `report.txt`: human-readable summary table and statistical test dump
+
+If `scipy` is installed, the script uses paired one-sided t-tests. Otherwise it falls back to an exact paired sign-flip test, so the experiment remains self-contained without adding a hard SciPy dependency.
+
 ## Further reading
 
 Also checkout [sim_env](https://github.com/Chaoqi-LIU/sim_env), which provides a set of simulation benchmarks. 
