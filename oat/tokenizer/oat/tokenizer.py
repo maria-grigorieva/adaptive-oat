@@ -1,9 +1,15 @@
 import torch
 import torch.nn.functional as F
+from time import perf_counter
 from typing import Tuple, Union, List, Optional
 
 from oat.model.common.normalizer import LinearNormalizer 
 from oat.tokenizer.base_tokenizer import BaseTokenizer 
+from oat.tokenizer.oat.adaptive_prefix import (
+    build_adaptive_thresholds,
+    compute_action_complexity,
+    select_prefix_depth,
+)
 from oat.tokenizer.oat.encoder.register_encoder import RegisterEncoder
 from oat.tokenizer.oat.decoder.single_pass_decoder import SinglePassDecoder
 from oat.tokenizer.oat.quantizer.fsq import FSQ
@@ -30,6 +36,10 @@ class OATTok(BaseTokenizer):
         encoder: RegisterEncoder,
         decoder: SinglePassDecoder,
         quantizer: FSQ,
+        adaptive_prefix: bool = False,
+        adaptive_available_depths: Tuple[int, ...] = (1, 2, 4, 8),
+        adaptive_low_threshold: float = 0.01,
+        adaptive_high_threshold: float = 0.10,
     ):
         super().__init__()
 
@@ -38,6 +48,10 @@ class OATTok(BaseTokenizer):
         self.quantizer = quantizer
         self.normalizer = LinearNormalizer()
         self.latent_horizon = self.decoder.latent_horizon
+        self.adaptive_prefix = adaptive_prefix
+        self.adaptive_available_depths = tuple(int(depth) for depth in adaptive_available_depths)
+        self.adaptive_low_threshold = float(adaptive_low_threshold)
+        self.adaptive_high_threshold = float(adaptive_high_threshold)
 
     def get_optimizer(
         self, 
@@ -59,6 +73,75 @@ class OATTok(BaseTokenizer):
 
     def set_normalizer(self, normalizer: LinearNormalizer):
         self.normalizer.load_state_dict(normalizer.state_dict())
+
+    def _resolve_available_depths(
+        self,
+        adaptive_available_depths: Optional[List[int]] = None,
+    ) -> List[int]:
+        depths = adaptive_available_depths
+        if depths is None:
+            depths = list(self.adaptive_available_depths)
+
+        valid_depths = sorted({int(depth) for depth in depths if int(depth) <= self.latent_horizon})
+        if len(valid_depths) == 0:
+            raise ValueError(
+                "No adaptive prefix depths are valid for this tokenizer. "
+                f"Requested={depths}, latent_horizon={self.latent_horizon}."
+            )
+        return valid_depths
+
+    def _resolve_adaptive_thresholds(
+        self,
+        available_depths: List[int],
+        adaptive_thresholds: Optional[List[float]] = None,
+        adaptive_low_threshold: Optional[float] = None,
+        adaptive_high_threshold: Optional[float] = None,
+    ) -> Optional[List[float]]:
+        if adaptive_thresholds is not None:
+            return [float(threshold) for threshold in adaptive_thresholds]
+
+        low_threshold = self.adaptive_low_threshold if adaptive_low_threshold is None else adaptive_low_threshold
+        high_threshold = self.adaptive_high_threshold if adaptive_high_threshold is None else adaptive_high_threshold
+        return build_adaptive_thresholds(
+            available_depths=available_depths,
+            low_threshold=float(low_threshold),
+            high_threshold=float(high_threshold),
+        )
+
+    def select_eval_keep_k(
+        self,
+        samples: torch.Tensor,
+        eval_keep_k: Optional[List[int]] = None,
+        adaptive_prefix: Optional[bool] = None,
+        adaptive_available_depths: Optional[List[int]] = None,
+        adaptive_thresholds: Optional[List[float]] = None,
+        adaptive_low_threshold: Optional[float] = None,
+        adaptive_high_threshold: Optional[float] = None,
+    ) -> Tuple[List[int], Optional[torch.Tensor]]:
+        if eval_keep_k is not None:
+            return [int(k) for k in eval_keep_k], None
+
+        if adaptive_prefix is None:
+            adaptive_prefix = self.adaptive_prefix
+
+        if not adaptive_prefix:
+            return [self.latent_horizon] * samples.shape[0], None
+
+        normalized_samples = self.normalizer["action"].normalize(samples)
+        complexity = compute_action_complexity(normalized_samples)
+        available_depths = self._resolve_available_depths(adaptive_available_depths)
+        thresholds = self._resolve_adaptive_thresholds(
+            available_depths=available_depths,
+            adaptive_thresholds=adaptive_thresholds,
+            adaptive_low_threshold=adaptive_low_threshold,
+            adaptive_high_threshold=adaptive_high_threshold,
+        )
+        selected_k = select_prefix_depth(
+            complexity=complexity,
+            available_depths=available_depths,
+            thresholds=thresholds,
+        )
+        return selected_k.tolist(), complexity
 
     def forward(self, batch) -> torch.Tensor:
         samples = batch['action']
@@ -106,12 +189,68 @@ class OATTok(BaseTokenizer):
 
     def autoencode(self, 
         samples: torch.Tensor, 
-        eval_keep_k: Optional[List[int]] = None, 
+        eval_keep_k: Optional[List[int]] = None,
+        adaptive_prefix: Optional[bool] = None,
+        adaptive_available_depths: Optional[List[int]] = None,
+        adaptive_thresholds: Optional[List[float]] = None,
+        adaptive_low_threshold: Optional[float] = None,
+        adaptive_high_threshold: Optional[float] = None,
     ) -> torch.Tensor:
         # samples: (B, T, sample_dim)
+        eval_keep_k, _ = self.select_eval_keep_k(
+            samples=samples,
+            eval_keep_k=eval_keep_k,
+            adaptive_prefix=adaptive_prefix,
+            adaptive_available_depths=adaptive_available_depths,
+            adaptive_thresholds=adaptive_thresholds,
+            adaptive_low_threshold=adaptive_low_threshold,
+            adaptive_high_threshold=adaptive_high_threshold,
+        )
         latents, _ = self.encode(samples)
         recons = self.decode(latents, eval_keep_k=eval_keep_k)
         return recons
+
+    def evaluate_reconstruction(
+        self,
+        samples: torch.Tensor,
+        eval_keep_k: Optional[List[int]] = None,
+        adaptive_prefix: Optional[bool] = None,
+        adaptive_available_depths: Optional[List[int]] = None,
+        adaptive_thresholds: Optional[List[float]] = None,
+        adaptive_low_threshold: Optional[float] = None,
+        adaptive_high_threshold: Optional[float] = None,
+        return_recons: bool = False,
+    ):
+        selected_k, complexity = self.select_eval_keep_k(
+            samples=samples,
+            eval_keep_k=eval_keep_k,
+            adaptive_prefix=adaptive_prefix,
+            adaptive_available_depths=adaptive_available_depths,
+            adaptive_thresholds=adaptive_thresholds,
+            adaptive_low_threshold=adaptive_low_threshold,
+            adaptive_high_threshold=adaptive_high_threshold,
+        )
+
+        start_time = perf_counter()
+        recons = self.autoencode(samples=samples, eval_keep_k=selected_k)
+        runtime_sec = perf_counter() - start_time
+
+        per_sample_mse = (recons - samples).square().flatten(start_dim=1).mean(dim=1)
+        metrics = {
+            "selected_k": selected_k,
+            "avg_k": float(sum(selected_k) / len(selected_k)),
+            "avg_token_count": float(sum(selected_k) / len(selected_k)),
+            "reconstruction_mse": float(per_sample_mse.mean().item()),
+            "reconstruction_mse_per_sample": per_sample_mse.detach().cpu().tolist(),
+            "runtime_sec": float(runtime_sec),
+            "runtime_per_sample_sec": float(runtime_sec / max(1, samples.shape[0])),
+        }
+        if complexity is not None:
+            metrics["complexity"] = complexity.detach().cpu().tolist()
+
+        if return_recons:
+            return recons, metrics
+        return metrics
 
     def tokenize(self, samples: torch.Tensor) -> torch.Tensor:
         # samples: (B, T, sample_dim)

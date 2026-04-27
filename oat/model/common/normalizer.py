@@ -1,12 +1,20 @@
 from typing import Union, Dict
 
 import unittest
-import zarr
 import numpy as np
 import torch
 import torch.nn as nn
 from oat.common.pytorch_util import dict_apply
 from oat.model.common.dict_of_tensor_mixin import DictOfTensorMixin
+
+try:
+    import zarr
+except ModuleNotFoundError:  # pragma: no cover - optional dependency for synthetic-only runs
+    class _ZarrFallback:
+        class Array:
+            pass
+
+    zarr = _ZarrFallback()
 
 
 class LinearNormalizer(DictOfTensorMixin):

@@ -2,7 +2,7 @@ import torch
 import dill
 import hydra
 from oat.model.common.module_attr_mixin import ModuleAttrMixin
-from typing import Optional
+from typing import Optional, Union
 
 
 class BaseTokenizer(ModuleAttrMixin):
@@ -12,8 +12,13 @@ class BaseTokenizer(ModuleAttrMixin):
         checkpoint: str, 
         output_dir: Optional[str] = None,
         return_configuration: bool = False,
+        map_location: Optional[Union[str, torch.device]] = None,
     ):
-        payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
+        payload = torch.load(
+            open(checkpoint, 'rb'),
+            pickle_module=dill,
+            map_location=map_location,
+        )
         cfg = payload['cfg']
         cls = hydra.utils.get_class(cfg._target_)
         workspace = cls(cfg, output_dir=output_dir, lazy_instantiation=False)

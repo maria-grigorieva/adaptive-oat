@@ -115,6 +115,7 @@ class MaskedNestedDropout(nn.Module):
             return x
 
         B, N, _ = x.shape
+        x = x.clone()
         if self.training:
             keep_ks = self.sample_keep_k(B, N, x.device)
             mask = keep_ks.unsqueeze(1) <= torch.arange(N, device=x.device).unsqueeze(0)  # (B, N)

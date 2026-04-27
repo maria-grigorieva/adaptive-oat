@@ -14,6 +14,10 @@ action_dim: ${task.tokenizer.shape_meta.action.shape[0]}
 latent_dim: ${eval:'len(${tokenizer.quantizer.levels})'}
 tokenizer: 
   _target_: oat.tokenizer.oat.tokenizer.OATTok
+  adaptive_prefix: false
+  adaptive_available_depths: [1, 2, 4, 8]
+  adaptive_low_threshold: 0.01
+  adaptive_high_threshold: 0.10
 
   encoder:
     _target_: oat.tokenizer.oat.encoder.register_encoder.RegisterEncoder
