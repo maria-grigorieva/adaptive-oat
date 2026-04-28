@@ -335,11 +335,16 @@ class LiberoRunner(BaseRunner):
         # log aggregate metrics
         log_data['mean_success_rate'] = np.mean(all_success)
         if len(all_token_lens) > 0:
-            log_data['mean_action_tokens'] = float(np.mean(all_token_lens))
-            log_data['token_ratio'] = float(np.mean(all_token_lens) / policy.max_seq_len)
+            token_lens_arr = np.asarray(all_token_lens)
+            log_data['mean_action_tokens'] = float(np.mean(token_lens_arr))
+            log_data['token_ratio'] = float(np.mean(token_lens_arr) / policy.max_seq_len)
+            log_data['num_action_sequences'] = int(token_lens_arr.shape[0])
+            log_data['num_sequences_reaching_max_k'] = int(np.sum(token_lens_arr >= policy.max_seq_len))
+            log_data['num_sequences_stopping_early'] = int(np.sum(token_lens_arr < policy.max_seq_len))
+            log_data['early_stop_rate'] = float(np.mean(token_lens_arr < policy.max_seq_len))
             for keep_k in range(policy.max_seq_len + 1):
                 log_data[f'pred_keep_k_{keep_k}'] = float(
-                    np.mean(np.asarray(all_token_lens) == keep_k)
+                    np.mean(token_lens_arr == keep_k)
                 )
         if len(all_eos_generated) > 0:
             log_data['eos_prediction_rate'] = float(np.mean(all_eos_generated))

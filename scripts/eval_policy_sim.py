@@ -176,6 +176,9 @@ def eval_policy_sim(
         json_log = dict()
         json_log['checkpoint'] = ckpt
         json_log['num_exp'] = num_exp
+        json_log['libero_task_limit'] = int(getattr(env_runner_cfg, 'task_limit', 0) or 0)
+        json_log['libero_episodes_per_task'] = int(getattr(env_runner_cfg, 'episodes_per_task', 0) or 0)
+        json_log['libero_n_test'] = int(getattr(env_runner_cfg, 'n_test', 0) or 0)
         
         # Add mean values
         for key, value in mean_log.items():
@@ -196,6 +199,35 @@ def eval_policy_sim(
         
         out_path = os.path.join(output_dir, 'eval_log.json')
         json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
+
+        if adaptive_halting:
+            keep_k_distribution = {
+                str(keep_k): float(json_log.get(f'pred_keep_k_{keep_k}_mean', 0.0))
+                for keep_k in range(policy.max_seq_len + 1)
+            }
+            num_sequences = int(json_log.get('num_action_sequences_mean', 0.0))
+            eos_diagnostics = {
+                'checkpoint': ckpt,
+                'adaptive_halting_requested': True,
+                'policy_use_adaptive_halting': bool(policy.use_adaptive_halting),
+                'eos_token_id': policy.eos_id,
+                'max_action_tokens': policy.max_seq_len,
+                'mean_action_tokens': float(json_log.get('mean_action_tokens_mean', 0.0)),
+                'token_ratio': float(json_log.get('token_ratio_mean', 0.0)),
+                'eos_prediction_rate': float(json_log.get('eos_prediction_rate_mean', 0.0)),
+                'early_stop_rate': float(json_log.get('early_stop_rate_mean', 0.0)),
+                'num_action_sequences': num_sequences,
+                'num_sequences_reaching_max_k': int(json_log.get('num_sequences_reaching_max_k_mean', 0.0)),
+                'num_sequences_stopping_early': int(json_log.get('num_sequences_stopping_early_mean', 0.0)),
+                'selected_k_distribution': keep_k_distribution,
+                'mean_eos_probability': None,
+                'notes': (
+                    'EOS probability diagnostics are unavailable in the current autoregressive '
+                    'generate() API; length and EOS-rate diagnostics are logged instead.'
+                ),
+            }
+            diag_path = os.path.join(output_dir, 'eos_diagnostics.json')
+            json.dump(eos_diagnostics, open(diag_path, 'w'), indent=2, sort_keys=True)
 
 
 if __name__ == '__main__':
