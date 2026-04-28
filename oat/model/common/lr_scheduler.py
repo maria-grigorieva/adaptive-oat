@@ -1,6 +1,51 @@
+import torch
+from typing import Optional, Union
+from torch.optim import Optimizer
+
+
+if not hasattr(torch, "xpu"):
+    class _CPUOnlyXPUShim:
+        @staticmethod
+        def empty_cache():
+            return None
+
+        @staticmethod
+        def device_count():
+            return 0
+
+        @staticmethod
+        def manual_seed(_seed):
+            return None
+
+        @staticmethod
+        def manual_seed_all(_seed):
+            return None
+
+        @staticmethod
+        def is_available():
+            return False
+
+        @staticmethod
+        def _is_in_bad_fork():
+            return False
+
+        @staticmethod
+        def reset_peak_memory_stats():
+            return None
+
+        @staticmethod
+        def max_memory_allocated():
+            return 0
+
+        @staticmethod
+        def synchronize():
+            return None
+
+    torch.xpu = _CPUOnlyXPUShim()
+
+
 from diffusers.optimization import (
-    Union, SchedulerType, Optional,
-    Optimizer, TYPE_TO_SCHEDULER_FUNCTION
+    SchedulerType, TYPE_TO_SCHEDULER_FUNCTION
 )
 
 def get_scheduler(

@@ -4,6 +4,8 @@ from libero.libero.benchmark.libero_suite_task_map import libero_task_map
 MT_TASKS = {
     'libero10': libero_task_map['libero_10'],
     'libero90': libero_task_map['libero_90'],
+    'libero_spatial': libero_task_map['libero_spatial'],
+    'libero_spatial_tiny': libero_task_map['libero_spatial'],
 }
 
 def is_multitask(task_name: str) -> bool:
