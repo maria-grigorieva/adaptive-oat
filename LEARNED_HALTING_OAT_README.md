@@ -13,26 +13,51 @@ This document describes the research prototype for learned halting on top of Ada
 - a synthetic, CPU-compatible experiment pipeline
 - optional integration with the existing LIBERO evaluation script
 
-## Experiments
+## Reproducible Evaluation
 
-Run the default synthetic comparison:
+Synthetic evaluation is the main reproducible result for this prototype. It is CPU-compatible and does not require LIBERO, MuJoCo, robosuite, or a trained checkpoint.
+
+### Synthetic evaluation, statistically robust
 
 ```bash
 python experiments/run_adaptive_halting_eval.py \
   --mode all \
-  --num-runs 3 \
+  --num-runs 10 \
   --output-dir results
 ```
 
-Useful variants:
+This writes:
+
+- `results/adaptive_halting_summary.csv`
+- `results/adaptive_halting_runs.csv`
+- `results/adaptive_halting_metrics.json`
+- `results/plots/`
+- `research_logs/adaptive_halting_eval.log`
+
+### Plot results
 
 ```bash
-python experiments/run_adaptive_halting_eval.py --mode fixed --keep-ks 1 2 4 8
-python experiments/run_adaptive_halting_eval.py --mode adaptive --num-samples 1024
-python experiments/run_adaptive_halting_eval.py --mode all --include-random-baseline
+python experiments/plot_results.py \
+  --input results/adaptive_halting_summary.csv \
+  --output-dir results/plots
 ```
 
-Optional LIBERO-backed evaluation with an existing policy checkpoint:
+### Optional CPU-only LIBERO smoke evaluation
+
+```bash
+python experiments/run_adaptive_halting_eval.py \
+  --mode all \
+  --libero-smoke-eval \
+  --libero-num-tasks 1 \
+  --libero-num-episodes 1 \
+  --output-dir results/libero_smoke
+```
+
+This smoke path is optional and may be skipped automatically on weak CPU-only machines or when LIBERO / MuJoCo / robosuite dependencies are unavailable. The script will write a `libero_smoke_status.json` file explaining whether it ran or why it was skipped.
+
+### Optional stronger-compute path
+
+If you have valid checkpoints and a proper robotics runtime, you can still use the optional evaluation path that delegates to `eval_policy_sim.py`:
 
 ```bash
 python experiments/run_adaptive_halting_eval.py \
@@ -42,12 +67,14 @@ python experiments/run_adaptive_halting_eval.py \
   --output-dir results/libero
 ```
 
+Full LIBERO validation is not the default reproducible path here. It typically requires stronger compute, more episodes, and real checkpoints.
+
 ## Metrics
 
 The experiment runner reports:
 
 - `avg_prefix_depth`: average selected prefix depth
-- `std_prefix_depth`: standard deviation of selected prefix depth
+- `std_prefix_depth`: standard deviation of selected prefix depth within a run
 - `recon_mse`: tokenizer-style prefix reconstruction error
 - `policy_loss`: adaptive classifier loss on held-out data when available
 - `runtime_sec`: inference-time runtime for the evaluation method
@@ -57,14 +84,18 @@ The experiment runner reports:
 - `selected_k_distribution`: distribution over used prefix depths
 - `oracle_k_distribution`: oracle distribution when available
 
+For the paper-ready aggregate view, the summary CSV reports mean and standard deviation across runs for the main metrics.
+
 ## Outputs
 
 The runner writes:
 
 - `results/adaptive_halting_summary.csv`
+- `results/adaptive_halting_runs.csv`
 - `results/adaptive_halting_metrics.json`
-- `results/plots/mse_vs_k.svg`
-- `results/plots/token_usage_vs_method.svg`
+- `results/plots/reconstruction_mse_errorbars.svg`
+- `results/plots/avg_token_usage_errorbars.svg`
+- `results/plots/token_ratio_errorbars.svg`
 - `results/plots/adaptive_k_distribution.svg`
 - `research_logs/adaptive_halting_eval.log`
 

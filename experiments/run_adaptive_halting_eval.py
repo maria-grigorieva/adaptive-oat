@@ -2,16 +2,16 @@
 """
 Run adaptive halting vs fixed-K evaluation.
 
-Default behavior is a fully synthetic, CPU-compatible benchmark that does not
-require LIBERO, torch, or trained checkpoints. Optional LIBERO integration is
-available through the existing eval_policy_sim.py script when a policy
-checkpoint is provided.
+The default path is a synthetic, CPU-compatible benchmark with no required
+robotics dependencies. A lightweight, optional LIBERO smoke-evaluation path is
+also provided and exits gracefully when dependencies or checkpoints are missing.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import importlib
 import json
 import logging
 import math
@@ -26,17 +26,32 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 
+NUMERIC_METRIC_SPECS = [
+    ("avg_prefix_depth", "avg_K"),
+    ("recon_mse", "recon_mse"),
+    ("token_ratio", "token_ratio"),
+    ("runtime_sec", "runtime_sec"),
+    ("eos_rate", "eos_rate"),
+    ("halting_accuracy", "halting_accuracy"),
+]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate adaptive halting vs fixed-K baselines.")
     parser.add_argument("--mode", choices=["fixed", "adaptive", "all"], default="all")
     parser.add_argument("--keep-ks", nargs="+", type=int, default=[1, 2, 4, 8])
     parser.add_argument("--num-samples", type=int, default=768)
-    parser.add_argument("--num-runs", type=int, default=1)
+    parser.add_argument("--num-runs", type=int, default=10)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--output-dir", default="results")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--policy-checkpoint", type=str, default=None)
-    parser.add_argument("--libero-eval", action="store_true")
+    parser.add_argument("--libero-eval", action="store_true", help="Optional full eval path via scripts/eval_policy_sim.py")
+    parser.add_argument("--libero-smoke-eval", action="store_true", help="Optional lightweight LIBERO smoke test")
+    parser.add_argument("--libero-suite", type=str, default="libero_spatial")
+    parser.add_argument("--libero-num-tasks", type=int, default=1)
+    parser.add_argument("--libero-num-episodes", type=int, default=1)
+    parser.add_argument("--libero-headless", action="store_true", default=True)
     parser.add_argument("--include-random-baseline", action="store_true")
     parser.add_argument("--skip-plots", action="store_true")
     parser.add_argument("--halt-tolerance", type=float, default=1e-3)
@@ -58,7 +73,6 @@ def setup_logging(log_path: Path) -> logging.Logger:
     file_handler = logging.FileHandler(log_path, mode="a")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-
     return logger
 
 
@@ -77,10 +91,17 @@ def distribution_from_values(values: np.ndarray, keep_ks: Sequence[int]) -> Dict
     values = np.asarray(values)
     if values.size == 0:
         return {str(k): 0.0 for k in keep_ks}
-    return {
-        str(k): float(np.mean(values == k))
-        for k in keep_ks
-    }
+    return {str(k): float(np.mean(values == k)) for k in keep_ks}
+
+
+def mean_std_ci(values: Sequence[float]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    if not values:
+        return None, None, None
+    arr = np.asarray(values, dtype=np.float64)
+    mean = float(arr.mean())
+    std = float(arr.std(ddof=0))
+    ci95 = float(1.96 * std / math.sqrt(len(arr))) if len(arr) > 0 else None
+    return mean, std, ci95
 
 
 @dataclass
@@ -130,30 +151,18 @@ class OrderedPrefixTokenizer:
             errors.append(mse.astype(np.float32))
         return np.stack(errors, axis=1), codes
 
-    def reconstruct_with_selected_k(
-        self,
-        codes: np.ndarray,
-        selected_k: np.ndarray,
-    ) -> np.ndarray:
-        recon = np.zeros((codes.shape[0], self.seq_len, self.action_dim), dtype=np.float32)
-        for keep_k in np.unique(selected_k):
-            mask = selected_k == keep_k
-            recon[mask] = self.reconstruct_from_codes(codes[mask], int(keep_k))
-        return recon
-
     def derive_oracle_keep_k(
         self,
         prefix_errors: np.ndarray,
         keep_ks: Sequence[int],
         tolerance: float,
     ) -> np.ndarray:
-        keep_ks = np.asarray(sorted(keep_ks), dtype=np.int64)
-        sort_order = np.argsort(np.asarray(keep_ks))
-        sorted_errors = prefix_errors[:, sort_order]
+        keep_ks_arr = np.asarray(sorted(keep_ks), dtype=np.int64)
+        sorted_errors = prefix_errors[:, np.argsort(keep_ks_arr)]
         full_error = sorted_errors[:, -1:]
         mask = sorted_errors <= (full_error + tolerance)
         first_valid_idx = mask.argmax(axis=1)
-        return keep_ks[first_valid_idx]
+        return keep_ks_arr[first_valid_idx]
 
 
 class SoftmaxHaltingPolicy:
@@ -185,7 +194,6 @@ class SoftmaxHaltingPolicy:
         x_norm = self._normalize(x_train)
         y_one_hot = np.eye(self.num_classes, dtype=np.float32)[y_train]
         history = []
-
         for _ in range(num_steps):
             logits = x_norm @ self.weights + self.bias
             probs = softmax(logits)
@@ -199,7 +207,6 @@ class SoftmaxHaltingPolicy:
 
             self.weights -= learning_rate * grad_w
             self.bias -= learning_rate * grad_b
-
         return history
 
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
@@ -301,10 +308,7 @@ def prefix_error_for_selected_k(
     selected_k: np.ndarray,
 ) -> np.ndarray:
     index_map = {int(k): idx for idx, k in enumerate(keep_ks)}
-    return np.asarray([
-        prefix_errors[i, index_map[int(k)]]
-        for i, k in enumerate(selected_k)
-    ], dtype=np.float32)
+    return np.asarray([prefix_errors[i, index_map[int(k)]] for i, k in enumerate(selected_k)], dtype=np.float32)
 
 
 def evaluate_fixed_method(
@@ -323,15 +327,16 @@ def evaluate_fixed_method(
         "avg_prefix_depth": float(selected_k.mean()),
         "std_prefix_depth": float(selected_k.std()),
         "recon_mse": recon_mse,
-        "policy_loss": None,
         "runtime_sec": runtime,
         "token_ratio": float(selected_k.mean() / kmax),
         "eos_rate": 0.0,
+        "halting_accuracy": float(np.mean(selected_k == oracle_keep_k)),
         "selected_k_distribution": distribution_from_values(selected_k, keep_ks),
         "oracle_k_distribution": distribution_from_values(oracle_keep_k, keep_ks),
-        "halting_accuracy": float(np.mean(selected_k == oracle_keep_k)),
         "predicted_k_values": selected_k.tolist(),
         "oracle_k_values": oracle_keep_k.tolist(),
+        "status": "ok",
+        "eval_kind": "synthetic",
     }
 
 
@@ -352,15 +357,16 @@ def evaluate_random_method(
         "avg_prefix_depth": float(selected_k.mean()),
         "std_prefix_depth": float(selected_k.std()),
         "recon_mse": recon_mse,
-        "policy_loss": None,
         "runtime_sec": runtime,
         "token_ratio": float(selected_k.mean() / kmax),
-        "eos_rate": float(np.mean(selected_k > 0)),
+        "eos_rate": 1.0,
+        "halting_accuracy": float(np.mean(selected_k == oracle_keep_k)),
         "selected_k_distribution": distribution_from_values(selected_k, keep_ks),
         "oracle_k_distribution": distribution_from_values(oracle_keep_k, keep_ks),
-        "halting_accuracy": float(np.mean(selected_k == oracle_keep_k)),
         "predicted_k_values": selected_k.tolist(),
         "oracle_k_values": oracle_keep_k.tolist(),
+        "status": "ok",
+        "eval_kind": "synthetic",
     }
 
 
@@ -380,7 +386,7 @@ def evaluate_adaptive_method(
 
     classifier = SoftmaxHaltingPolicy(keep_ks=keep_ks, feature_dim=x_train.shape[1], seed=seed)
     train_start = time.perf_counter()
-    loss_history = classifier.fit(x_train, y_train)
+    classifier.fit(x_train, y_train)
     train_runtime = time.perf_counter() - train_start
 
     infer_start = time.perf_counter()
@@ -389,24 +395,23 @@ def evaluate_adaptive_method(
 
     recon_mse = float(prefix_error_for_selected_k(prefix_errors_test, keep_ks, predicted_k).mean())
     policy_loss = classifier.loss(x_test, y_test)
-    selected_distribution = distribution_from_values(predicted_k, keep_ks)
-
     return {
         "method": "adaptive_halting",
         "avg_prefix_depth": float(predicted_k.mean()),
         "std_prefix_depth": float(predicted_k.std()),
         "recon_mse": recon_mse,
-        "policy_loss": float(policy_loss),
         "runtime_sec": infer_runtime,
-        "train_runtime_sec": train_runtime,
         "token_ratio": float(predicted_k.mean() / kmax),
         "eos_rate": 1.0,
-        "selected_k_distribution": selected_distribution,
-        "oracle_k_distribution": distribution_from_values(oracle_test, keep_ks),
         "halting_accuracy": float(np.mean(predicted_k == oracle_test)),
+        "policy_loss": float(policy_loss),
+        "train_runtime_sec": float(train_runtime),
+        "selected_k_distribution": distribution_from_values(predicted_k, keep_ks),
+        "oracle_k_distribution": distribution_from_values(oracle_test, keep_ks),
         "predicted_k_values": predicted_k.tolist(),
         "oracle_k_values": oracle_test.tolist(),
-        "loss_history_tail": loss_history[-10:],
+        "status": "ok",
+        "eval_kind": "synthetic",
     }
 
 
@@ -415,19 +420,16 @@ def run_synthetic_evaluation(args: argparse.Namespace, logger: logging.Logger) -
     if keep_ks[0] <= 0:
         raise ValueError("keep_ks must be positive")
     kmax = max(keep_ks)
-    seq_len = 32
-    action_dim = 7
-
+    tokenizer = OrderedPrefixTokenizer(seq_len=32, action_dim=7, kmax=kmax)
     methods_per_run: Dict[str, List[Dict[str, object]]] = {}
-    tokenizer = OrderedPrefixTokenizer(seq_len=seq_len, action_dim=action_dim, kmax=kmax)
 
     for run_idx in range(args.num_runs):
         run_seed = args.seed + run_idx
         set_seed(run_seed)
         dataset = generate_synthetic_dataset(
             num_samples=args.num_samples,
-            seq_len=seq_len,
-            action_dim=action_dim,
+            seq_len=32,
+            action_dim=7,
             tokenizer=tokenizer,
             seed=run_seed,
         )
@@ -459,7 +461,6 @@ def run_synthetic_evaluation(args: argparse.Namespace, logger: logging.Logger) -
                         seed=run_seed,
                     )
                 )
-
         if args.mode in {"adaptive", "all"}:
             run_metrics.append(
                 evaluate_adaptive_method(
@@ -474,43 +475,74 @@ def run_synthetic_evaluation(args: argparse.Namespace, logger: logging.Logger) -
                 )
             )
 
+        methods_per_run[f"run_{run_idx}"] = run_metrics
         logger.info(
             "Synthetic run %d/%d complete | oracle distribution=%s",
             run_idx + 1,
             args.num_runs,
             distribution_from_values(oracle_test, keep_ks),
         )
-        methods_per_run[f"run_{run_idx}"] = run_metrics
-
     return methods_per_run
 
 
-def run_libero_evaluation(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, List[Dict[str, object]]]:
-    if not args.policy_checkpoint:
-        raise ValueError("--policy-checkpoint is required with --libero-eval")
+def check_libero_dependencies() -> Tuple[bool, Optional[str]]:
+    required_modules = ["libero", "robosuite", "mujoco"]
+    missing = []
+    for module_name in required_modules:
+        try:
+            importlib.import_module(module_name)
+        except Exception as exc:  # pragma: no cover - environment dependent
+            missing.append(f"{module_name}: {exc}")
+    if missing:
+        return False, "; ".join(missing)
+    return True, None
+
+
+def save_smoke_status(path: Path, status: str, reason: str, extra: Optional[Dict[str, object]] = None) -> None:
+    payload = {"status": status, "reason": reason}
+    if extra:
+        payload.update(extra)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def try_run_libero_smoke_eval(args: argparse.Namespace, logger: logging.Logger) -> Tuple[Optional[Dict[str, List[Dict[str, object]]]], Path]:
+    output_dir = Path(args.output_dir)
+    status_path = output_dir / "libero_smoke_status.json"
+
+    available, reason = check_libero_dependencies()
+    if not available:
+        warning = f"Skipping LIBERO smoke evaluation because required dependencies are unavailable: {reason}"
+        logger.warning(warning)
+        save_smoke_status(status_path, status="skipped", reason=warning)
+        return None, status_path
+
+    if args.policy_checkpoint is None:
+        warning = "Skipping LIBERO smoke evaluation because --policy-checkpoint was not provided."
+        logger.warning(warning)
+        save_smoke_status(status_path, status="skipped", reason=warning)
+        return None, status_path
 
     keep_ks = sorted(set(args.keep_ks))
     methods_per_run: Dict[str, List[Dict[str, object]]] = {}
-    checkpoint_path = Path(args.policy_checkpoint)
-    eval_root = Path(args.output_dir) / "libero_runs"
 
     for run_idx in range(args.num_runs):
         run_seed = args.seed + run_idx
         run_metrics = []
-        methods = []
+        methods: List[Tuple[str, Dict[str, object]]] = []
         if args.mode in {"fixed", "all"}:
             methods.extend((f"fixed_k_{k}", {"use_k_tokens": k}) for k in keep_ks)
         if args.mode in {"adaptive", "all"}:
             methods.append(("adaptive_halting", {"adaptive_halting": True}))
 
         for method_name, method_kwargs in methods:
-            method_output = eval_root / f"run_{run_idx}" / method_name
+            method_output = output_dir / "libero_smoke" / f"run_{run_idx}" / method_name
             method_output.mkdir(parents=True, exist_ok=True)
             command = [
                 sys.executable,
                 "scripts/eval_policy_sim.py",
                 "--checkpoint",
-                str(checkpoint_path),
+                str(args.policy_checkpoint),
                 "--output_dir",
                 str(method_output),
                 "--num_exp",
@@ -523,34 +555,99 @@ def run_libero_evaluation(args: argparse.Namespace, logger: logging.Logger) -> D
             if method_kwargs.get("adaptive_halting", False):
                 command.append("--adaptive-halting")
 
-            logger.info("Running optional LIBERO eval: %s", " ".join(command))
-            subprocess.run(command, check=True)
-            payload = json.loads((method_output / "eval_log.json").read_text())
-
-            avg_prefix_depth = float(payload.get("mean_action_tokens_mean", payload.get("mean_action_tokens", math.nan)))
-            run_metrics.append({
-                "method": method_name,
-                "avg_prefix_depth": avg_prefix_depth,
-                "std_prefix_depth": 0.0,
-                "recon_mse": float(payload.get("test_reconst_mse_mean", payload.get("test_reconst_mse", math.nan))),
-                "policy_loss": None,
-                "runtime_sec": float(payload.get("runtime_sec_mean", payload.get("runtime_sec", math.nan))),
-                "token_ratio": float(payload.get("token_ratio_mean", payload.get("token_ratio", math.nan))),
-                "eos_rate": float(payload.get("eos_prediction_rate_mean", payload.get("eos_prediction_rate", 0.0))),
-                "selected_k_distribution": {
+            env = dict(**os_environ_headless(args.libero_headless))
+            start = time.perf_counter()
+            try:
+                subprocess.run(
+                    command,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    env=env,
+                )
+                runtime = time.perf_counter() - start
+                metrics_path = method_output / "eval_log.json"
+                if not metrics_path.is_file():
+                    raise RuntimeError(f"Missing expected eval output: {metrics_path}")
+                payload = json.loads(metrics_path.read_text())
+                avg_prefix_depth = payload.get("mean_action_tokens_mean", payload.get("mean_action_tokens"))
+                token_ratio = payload.get("token_ratio_mean", payload.get("token_ratio"))
+                eos_rate = payload.get("eos_prediction_rate_mean", payload.get("eos_prediction_rate", 0.0))
+                success_rate = payload.get("mean_success_rate_mean", payload.get("mean_success_rate"))
+                selected_dist = {
                     str(k): float(payload.get(f"pred_keep_k_{k}_mean", payload.get(f"pred_keep_k_{k}", 0.0)))
                     for k in keep_ks
-                },
-                "oracle_k_distribution": {},
-                "halting_accuracy": None,
-                "predicted_k_values": [],
-                "oracle_k_values": [],
-                "success_rate": float(payload.get("mean_success_rate_mean", payload.get("mean_success_rate", math.nan))),
-            })
+                }
+                run_metrics.append({
+                    "method": method_name,
+                    "avg_prefix_depth": float(avg_prefix_depth) if avg_prefix_depth is not None else math.nan,
+                    "std_prefix_depth": 0.0,
+                    "recon_mse": payload.get("test_reconst_mse_mean", payload.get("test_reconst_mse", math.nan)),
+                    "runtime_sec": float(runtime),
+                    "token_ratio": float(token_ratio) if token_ratio is not None else math.nan,
+                    "eos_rate": float(eos_rate),
+                    "halting_accuracy": None,
+                    "selected_k_distribution": selected_dist,
+                    "oracle_k_distribution": {},
+                    "predicted_k_values": [],
+                    "oracle_k_values": [],
+                    "success_rate": float(success_rate) if success_rate is not None else math.nan,
+                    "status": "ok",
+                    "eval_kind": "libero_smoke",
+                })
+            except Exception as exc:  # pragma: no cover - environment dependent
+                runtime = time.perf_counter() - start
+                failure_reason = f"{type(exc).__name__}: {exc}"
+                logger.warning("LIBERO smoke eval failed for %s run %d: %s", method_name, run_idx, failure_reason)
+                run_metrics.append({
+                    "method": method_name,
+                    "avg_prefix_depth": math.nan,
+                    "std_prefix_depth": math.nan,
+                    "recon_mse": math.nan,
+                    "runtime_sec": float(runtime),
+                    "token_ratio": math.nan,
+                    "eos_rate": math.nan,
+                    "halting_accuracy": None,
+                    "selected_k_distribution": {str(k): 0.0 for k in keep_ks},
+                    "oracle_k_distribution": {},
+                    "predicted_k_values": [],
+                    "oracle_k_values": [],
+                    "success_rate": math.nan,
+                    "status": "failed",
+                    "failure_reason": failure_reason,
+                    "eval_kind": "libero_smoke",
+                })
 
         methods_per_run[f"run_{run_idx}"] = run_metrics
 
-    return methods_per_run
+    any_success = any(
+        metric.get("status") == "ok"
+        for run_metrics in methods_per_run.values()
+        for metric in run_metrics
+    )
+    status = "ok" if any_success else "failed"
+    reason = "LIBERO smoke evaluation completed." if any_success else "All LIBERO smoke evaluations failed."
+    save_smoke_status(
+        status_path,
+        status=status,
+        reason=reason,
+        extra={
+            "libero_suite": args.libero_suite,
+            "libero_num_tasks": args.libero_num_tasks,
+            "libero_num_episodes": args.libero_num_episodes,
+            "headless": bool(args.libero_headless),
+        },
+    )
+    return methods_per_run, status_path
+
+
+def os_environ_headless(headless: bool) -> Dict[str, str]:
+    env = dict(**__import__("os").environ)
+    if headless:
+        env.setdefault("MUJOCO_GL", "egl")
+        env.setdefault("PYOPENGL_PLATFORM", "egl")
+    return env
 
 
 def aggregate_metrics(
@@ -562,51 +659,37 @@ def aggregate_metrics(
         for metric in run_metrics:
             grouped.setdefault(metric["method"], []).append(metric)
 
-    numeric_keys = [
-        "avg_prefix_depth",
-        "std_prefix_depth",
-        "recon_mse",
-        "runtime_sec",
-        "token_ratio",
-        "eos_rate",
-        "halting_accuracy",
-        "policy_loss",
-        "train_runtime_sec",
-        "success_rate",
-    ]
-
     aggregated: Dict[str, Dict[str, object]] = {}
     for method, metrics_list in grouped.items():
         row: Dict[str, object] = {"method": method}
-        for key in numeric_keys:
-            values = [m[key] for m in metrics_list if m.get(key) is not None and not math.isnan(float(m[key]))]
-            if values:
-                values_np = np.asarray(values, dtype=np.float64)
-                row[key] = float(values_np.mean())
-                row[f"{key}_run_std"] = float(values_np.std(ddof=0))
-            else:
-                row[key] = None
-                row[f"{key}_run_std"] = None
+        for metric_key, alias in NUMERIC_METRIC_SPECS:
+            values = []
+            for metric in metrics_list:
+                value = metric.get(metric_key)
+                if value is None:
+                    continue
+                try:
+                    value_f = float(value)
+                except Exception:
+                    continue
+                if math.isnan(value_f):
+                    continue
+                values.append(value_f)
+            mean, std, ci95 = mean_std_ci(values)
+            row[f"{alias}_mean"] = mean
+            row[f"{alias}_std"] = std
+            row[f"{alias}_ci95"] = ci95
 
-        selected_dists = np.asarray([
-            [metric["selected_k_distribution"].get(str(k), 0.0) for k in keep_ks]
-            for metric in metrics_list
-        ], dtype=np.float64)
-        row["selected_k_distribution"] = {
-            str(k): float(selected_dists[:, idx].mean())
-            for idx, k in enumerate(keep_ks)
-        }
+        selected_dists = np.asarray(
+            [[metric["selected_k_distribution"].get(str(k), 0.0) for k in keep_ks] for metric in metrics_list],
+            dtype=np.float64,
+        )
+        row["selected_k_distribution"] = {str(k): float(selected_dists[:, idx].mean()) for idx, k in enumerate(keep_ks)}
 
         oracle_dists = [metric.get("oracle_k_distribution", {}) for metric in metrics_list if metric.get("oracle_k_distribution")]
         if oracle_dists:
-            oracle_np = np.asarray([
-                [dist.get(str(k), 0.0) for k in keep_ks]
-                for dist in oracle_dists
-            ], dtype=np.float64)
-            row["oracle_k_distribution"] = {
-                str(k): float(oracle_np[:, idx].mean())
-                for idx, k in enumerate(keep_ks)
-            }
+            oracle_np = np.asarray([[dist.get(str(k), 0.0) for k in keep_ks] for dist in oracle_dists], dtype=np.float64)
+            row["oracle_k_distribution"] = {str(k): float(oracle_np[:, idx].mean()) for idx, k in enumerate(keep_ks)}
         else:
             row["oracle_k_distribution"] = {}
 
@@ -614,47 +697,83 @@ def aggregate_metrics(
         oracle_values = [value for metric in metrics_list for value in metric.get("oracle_k_values", [])]
         row["predicted_k_values"] = predicted_values
         row["oracle_k_values"] = oracle_values
+        row["num_completed_runs"] = int(sum(metric.get("status", "ok") == "ok" for metric in metrics_list))
         aggregated[method] = row
-
     return aggregated
 
 
-def write_summary_csv(
-    output_path: Path,
-    aggregated: Dict[str, Dict[str, object]],
-) -> None:
+def write_summary_csv(output_path: Path, aggregated: Dict[str, Dict[str, object]]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "method",
-        "avg_prefix_depth",
-        "avg_prefix_depth_run_std",
-        "std_prefix_depth",
-        "std_prefix_depth_run_std",
-        "recon_mse",
-        "recon_mse_run_std",
-        "policy_loss",
-        "policy_loss_run_std",
-        "runtime_sec",
-        "runtime_sec_run_std",
-        "token_ratio",
-        "token_ratio_run_std",
-        "eos_rate",
-        "eos_rate_run_std",
-        "halting_accuracy",
-        "halting_accuracy_run_std",
-        "success_rate",
-        "success_rate_run_std",
+        "avg_K_mean", "avg_K_std",
+        "recon_mse_mean", "recon_mse_std",
+        "token_ratio_mean", "token_ratio_std",
+        "runtime_sec_mean", "runtime_sec_std",
+        "eos_rate_mean", "eos_rate_std",
+        "halting_accuracy_mean", "halting_accuracy_std",
         "selected_k_distribution",
-        "oracle_k_distribution",
     ]
     with output_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for method in sorted(aggregated):
-            row = dict(aggregated[method])
-            row["selected_k_distribution"] = json.dumps(row["selected_k_distribution"], sort_keys=True)
-            row["oracle_k_distribution"] = json.dumps(row["oracle_k_distribution"], sort_keys=True)
-            writer.writerow({key: row.get(key) for key in fieldnames})
+            row = aggregated[method]
+            writer.writerow({
+                "method": method,
+                "avg_K_mean": row.get("avg_K_mean"),
+                "avg_K_std": row.get("avg_K_std"),
+                "recon_mse_mean": row.get("recon_mse_mean"),
+                "recon_mse_std": row.get("recon_mse_std"),
+                "token_ratio_mean": row.get("token_ratio_mean"),
+                "token_ratio_std": row.get("token_ratio_std"),
+                "runtime_sec_mean": row.get("runtime_sec_mean"),
+                "runtime_sec_std": row.get("runtime_sec_std"),
+                "eos_rate_mean": row.get("eos_rate_mean"),
+                "eos_rate_std": row.get("eos_rate_std"),
+                "halting_accuracy_mean": row.get("halting_accuracy_mean"),
+                "halting_accuracy_std": row.get("halting_accuracy_std"),
+                "selected_k_distribution": json.dumps(row.get("selected_k_distribution", {}), sort_keys=True),
+            })
+
+
+def write_runs_csv(output_path: Path, methods_per_run: Dict[str, List[Dict[str, object]]]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "run_id",
+        "method",
+        "avg_prefix_depth",
+        "std_prefix_depth",
+        "recon_mse",
+        "runtime_sec",
+        "token_ratio",
+        "eos_rate",
+        "halting_accuracy",
+        "success_rate",
+        "status",
+        "failure_reason",
+        "selected_k_distribution",
+    ]
+    with output_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for run_id, run_metrics in methods_per_run.items():
+            for metric in run_metrics:
+                writer.writerow({
+                    "run_id": run_id,
+                    "method": metric.get("method"),
+                    "avg_prefix_depth": metric.get("avg_prefix_depth"),
+                    "std_prefix_depth": metric.get("std_prefix_depth"),
+                    "recon_mse": metric.get("recon_mse"),
+                    "runtime_sec": metric.get("runtime_sec"),
+                    "token_ratio": metric.get("token_ratio"),
+                    "eos_rate": metric.get("eos_rate"),
+                    "halting_accuracy": metric.get("halting_accuracy"),
+                    "success_rate": metric.get("success_rate"),
+                    "status": metric.get("status", "ok"),
+                    "failure_reason": metric.get("failure_reason", ""),
+                    "selected_k_distribution": json.dumps(metric.get("selected_k_distribution", {}), sort_keys=True),
+                })
 
 
 def save_metrics_json(
@@ -673,6 +792,7 @@ def save_metrics_json(
             "seed": args.seed,
             "policy_checkpoint": args.policy_checkpoint,
             "libero_eval": args.libero_eval,
+            "libero_smoke_eval": args.libero_smoke_eval,
             "include_random_baseline": args.include_random_baseline,
             "halt_tolerance": args.halt_tolerance,
         },
@@ -683,12 +803,36 @@ def save_metrics_json(
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
 
-def run_plotter(metrics_json_path: Path, output_dir: Path, logger: logging.Logger) -> None:
+def print_paper_ready_table(aggregated: Dict[str, Dict[str, object]], logger: logging.Logger) -> None:
+    lines = [
+        "",
+        "Paper-ready summary",
+        "method | avg_K mean±std | recon_mse mean±std | token_ratio mean±std | runtime_sec mean±std | eos_rate mean±std | halting_acc mean±std",
+        "--- | --- | --- | --- | --- | --- | ---",
+    ]
+    for method in sorted(aggregated):
+        row = aggregated[method]
+
+        def fmt(prefix: str) -> str:
+            mean = row.get(f"{prefix}_mean")
+            std = row.get(f"{prefix}_std")
+            if mean is None:
+                return "n/a"
+            return f"{float(mean):.4f} ± {float(std or 0.0):.4f}"
+
+        lines.append(
+            f"{method} | {fmt('avg_K')} | {fmt('recon_mse')} | {fmt('token_ratio')} | "
+            f"{fmt('runtime_sec')} | {fmt('eos_rate')} | {fmt('halting_accuracy')}"
+        )
+    logger.info("\n%s", "\n".join(lines))
+
+
+def run_plotter(summary_csv_path: Path, output_dir: Path, logger: logging.Logger) -> None:
     command = [
         sys.executable,
         "experiments/plot_results.py",
-        "--metrics-json",
-        str(metrics_json_path),
+        "--input",
+        str(summary_csv_path),
         "--output-dir",
         str(output_dir / "plots"),
     ]
@@ -696,92 +840,62 @@ def run_plotter(metrics_json_path: Path, output_dir: Path, logger: logging.Logge
     subprocess.run(command, check=True)
 
 
-def log_sanity_checks(
-    aggregated: Dict[str, Dict[str, object]],
-    keep_ks: Sequence[int],
-    logger: logging.Logger,
-) -> None:
+def log_sanity_checks(aggregated: Dict[str, Dict[str, object]], keep_ks: Sequence[int], logger: logging.Logger) -> None:
     adaptive = aggregated.get("adaptive_halting")
     if adaptive is None:
         return
-
     predicted = np.asarray(adaptive.get("predicted_k_values", []), dtype=np.int64)
-    oracle = np.asarray(adaptive.get("oracle_k_values", []), dtype=np.int64)
     kmax = max(keep_ks)
-
     if predicted.size > 0:
         if int(predicted.max()) > kmax:
             raise RuntimeError("Adaptive K exceeded Kmax")
         if np.unique(predicted).size <= 1:
-            logger.warning("Adaptive K distribution is degenerate: only %s selected", np.unique(predicted).tolist())
+            logger.warning("Adaptive K distribution is degenerate: %s", np.unique(predicted).tolist())
         if float(np.mean(predicted == min(keep_ks))) >= 0.95:
-            logger.warning("EOS is almost always predicted at the first admissible step")
-    if oracle.size > 0 and predicted.size > 0:
-        logger.info(
-            "Halting agreement | accuracy=%.4f | oracle=%s | predicted=%s",
-            adaptive.get("halting_accuracy", math.nan),
-            adaptive.get("oracle_k_distribution", {}),
-            adaptive.get("selected_k_distribution", {}),
-        )
-
-    fixed_methods = [value for key, value in aggregated.items() if key.startswith("fixed_k_")]
-    if fixed_methods and adaptive is not None and adaptive.get("runtime_sec") is not None:
-        baseline_runtime = max(
-            value["runtime_sec"]
-            for value in fixed_methods
-            if value.get("runtime_sec") is not None
-        )
-        if baseline_runtime > 0 and adaptive["runtime_sec"] > 5.0 * baseline_runtime:
+            logger.warning("EOS is almost always triggered at the earliest prefix.")
+    fixed_k8 = aggregated.get(f"fixed_k_{kmax}")
+    if fixed_k8 and adaptive.get("runtime_sec_mean") and fixed_k8.get("runtime_sec_mean"):
+        if float(adaptive["runtime_sec_mean"]) > 5.0 * float(fixed_k8["runtime_sec_mean"]):
             logger.warning(
-                "Adaptive runtime is substantially higher than fixed-K baselines: %.4fs vs %.4fs",
-                adaptive["runtime_sec"],
-                baseline_runtime,
+                "Adaptive runtime increased substantially: %.6fs vs %.6fs",
+                adaptive["runtime_sec_mean"],
+                fixed_k8["runtime_sec_mean"],
             )
-
-
-def print_summary_table(aggregated: Dict[str, Dict[str, object]], logger: logging.Logger) -> None:
-    headers = ["method", "avg_K", "recon_mse", "token_ratio", "eos_rate", "halt_acc"]
-    lines = [" | ".join(headers), " | ".join(["---"] * len(headers))]
-    for method in sorted(aggregated):
-        row = aggregated[method]
-        lines.append(
-            " | ".join([
-                method,
-                f"{row.get('avg_prefix_depth', math.nan):.3f}" if row.get("avg_prefix_depth") is not None else "n/a",
-                f"{row.get('recon_mse', math.nan):.6f}" if row.get("recon_mse") is not None else "n/a",
-                f"{row.get('token_ratio', math.nan):.3f}" if row.get("token_ratio") is not None else "n/a",
-                f"{row.get('eos_rate', math.nan):.3f}" if row.get("eos_rate") is not None else "n/a",
-                f"{row.get('halting_accuracy', math.nan):.3f}" if row.get("halting_accuracy") is not None else "n/a",
-            ])
-        )
-    logger.info("Summary table\n%s", "\n".join(lines))
 
 
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
-    metrics_json_path = output_dir / "adaptive_halting_metrics.json"
     summary_csv_path = output_dir / "adaptive_halting_summary.csv"
+    runs_csv_path = output_dir / "adaptive_halting_runs.csv"
+    metrics_json_path = output_dir / "adaptive_halting_metrics.json"
     logger = setup_logging(Path("research_logs") / "adaptive_halting_eval.log")
 
     logger.info("Starting adaptive halting evaluation with args=%s", vars(args))
-
-    if args.libero_eval:
-        methods_per_run = run_libero_evaluation(args, logger)
-    else:
-        methods_per_run = run_synthetic_evaluation(args, logger)
-
+    methods_per_run = run_synthetic_evaluation(args, logger)
     aggregated = aggregate_metrics(methods_per_run, keep_ks=sorted(set(args.keep_ks)))
     write_summary_csv(summary_csv_path, aggregated)
+    write_runs_csv(runs_csv_path, methods_per_run)
     save_metrics_json(metrics_json_path, args, methods_per_run, aggregated)
     log_sanity_checks(aggregated, keep_ks=sorted(set(args.keep_ks)), logger=logger)
-    print_summary_table(aggregated, logger)
+    print_paper_ready_table(aggregated, logger)
 
     if not args.skip_plots:
         try:
-            run_plotter(metrics_json_path, output_dir, logger)
+            run_plotter(summary_csv_path, output_dir, logger)
         except Exception as exc:
             logger.warning("Plot generation failed: %s", exc)
+
+    if args.libero_smoke_eval:
+        smoke_metrics, status_path = try_run_libero_smoke_eval(args, logger)
+        if smoke_metrics is not None:
+            smoke_summary_path = output_dir / "libero_smoke_summary.csv"
+            smoke_runs_path = output_dir / "libero_smoke_runs.csv"
+            smoke_aggregated = aggregate_metrics(smoke_metrics, keep_ks=sorted(set(args.keep_ks)))
+            write_summary_csv(smoke_summary_path, smoke_aggregated)
+            write_runs_csv(smoke_runs_path, smoke_metrics)
+            logger.info("LIBERO smoke summary written to %s", smoke_summary_path.resolve())
+        logger.info("LIBERO smoke status written to %s", status_path.resolve())
 
     logger.info("Artifacts written to %s", output_dir.resolve())
 

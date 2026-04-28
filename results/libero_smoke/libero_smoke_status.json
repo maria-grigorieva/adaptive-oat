@@ -1,0 +1,4 @@
+{
+  "reason": "Skipping LIBERO smoke evaluation because required dependencies are unavailable: libero: No module named 'libero'; robosuite: No module named 'robosuite'; mujoco: No module named 'mujoco'",
+  "status": "skipped"
+}
