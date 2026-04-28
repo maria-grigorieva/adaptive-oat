@@ -185,6 +185,7 @@ class TrainPolicyWorkspace(BaseWorkspace):
                     self.ema_model.train()
 
                 loss_info = torch.zeros(2, device=device)   # [total loss, total batch_size]
+                halt_info = torch.zeros(3, device=device)   # [sum keep_k, sum token_ratio, total batch_size]
                 with tqdm.tqdm(
                     train_dataloader, 
                     desc=f"Training epoch {self.epoch}",
@@ -209,6 +210,10 @@ class TrainPolicyWorkspace(BaseWorkspace):
                             batch_size = batch['action'].shape[0]
                             loss_info[0] += loss.detach() * batch_size
                             loss_info[1] += batch_size
+                            model_info = accelerator.unwrap_model(self.model).get_last_forward_info()
+                            halt_info[0] += model_info['mean_keep_k'] * batch_size
+                            halt_info[1] += model_info['token_ratio'] * batch_size
+                            halt_info[2] += batch_size
 
                             # step optimizer
                             if accelerator.sync_gradients:
@@ -255,9 +260,13 @@ class TrainPolicyWorkspace(BaseWorkspace):
                 # replace train_loss with epoch average
                 accelerator.wait_for_everyone()
                 loss_info = accelerator.reduce(loss_info, reduction='sum')
+                halt_info = accelerator.reduce(halt_info, reduction='sum')
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
                     step_log['train_loss'] = (loss_info[0] / loss_info[1]).item()
+                    if halt_info[2].item() > 0:
+                        step_log['train_mean_keep_k'] = (halt_info[0] / halt_info[2]).item()
+                        step_log['train_token_ratio'] = (halt_info[1] / halt_info[2]).item()
 
                 # ========= eval for this epoch ==========
                 policy = accelerator.unwrap_model(self.model)
@@ -276,6 +285,7 @@ class TrainPolicyWorkspace(BaseWorkspace):
                 # run validation
                 if (self.epoch % cfg.training.val_every) == 0:
                     loss_info = torch.zeros(2, device=device)   # [total loss, total batch_size]
+                    halt_info = torch.zeros(3, device=device)   # [sum keep_k, sum token_ratio, total batch_size]
                     with torch.inference_mode():
                         with tqdm.tqdm(
                             val_dataloader, 
@@ -296,6 +306,10 @@ class TrainPolicyWorkspace(BaseWorkspace):
                                 batch_size = batch['action'].shape[0]
                                 loss_info[0] += loss * batch_size
                                 loss_info[1] += batch_size
+                                model_info = policy.get_last_forward_info()
+                                halt_info[0] += model_info['mean_keep_k'] * batch_size
+                                halt_info[1] += model_info['token_ratio'] * batch_size
+                                halt_info[2] += batch_size
 
                                 # break if reach max val steps
                                 if (cfg.training.max_val_steps is not None) \
@@ -305,13 +319,19 @@ class TrainPolicyWorkspace(BaseWorkspace):
                     # logging
                     accelerator.wait_for_everyone()
                     loss_info = accelerator.reduce(loss_info, reduction='sum')
+                    halt_info = accelerator.reduce(halt_info, reduction='sum')
                     accelerator.wait_for_everyone()
                     if accelerator.is_main_process:
                         step_log['val_loss'] = (loss_info[0] / loss_info[1]).item()
+                        if halt_info[2].item() > 0:
+                            step_log['val_mean_keep_k'] = (halt_info[0] / halt_info[2]).item()
+                            step_log['val_token_ratio'] = (halt_info[1] / halt_info[2]).item()
 
                 # action prediction eval
                 if self.epoch % cfg.training.sample_every == 0:
                     loss_info = torch.zeros(2, device=device)   # [total loss, total batch_size]
+                    pred_stats = torch.zeros(4 + policy.max_seq_len + 1, device=device)
+                    # [sum mse, sum batch, sum keep_k, sum eos_generated, hist(0..Kmax)]
                     with torch.inference_mode():
                         with tqdm.tqdm(
                             val_dataloader, 
@@ -331,11 +351,22 @@ class TrainPolicyWorkspace(BaseWorkspace):
                                 result = policy.predict_action(obs_dict)
                                 pred_action = result['action_pred']  # [B, Ta, Da]
                                 mse = F.mse_loss(pred_action, gt_action).item()
+                                token_lens = result['token_lens'].to(device=device, dtype=torch.long)
+                                eos_generated = result['eos_generated'].to(device=device, dtype=torch.float32)
 
                                 # log loss
                                 batch_size = batch['action'].shape[0]
                                 loss_info[0] += mse * batch_size
                                 loss_info[1] += batch_size
+                                pred_stats[0] += mse * batch_size
+                                pred_stats[1] += batch_size
+                                pred_stats[2] += token_lens.to(torch.float32).sum()
+                                pred_stats[3] += eos_generated.sum()
+                                hist = torch.bincount(
+                                    token_lens.clamp(min=0, max=policy.max_seq_len),
+                                    minlength=policy.max_seq_len + 1,
+                                ).to(torch.float32)
+                                pred_stats[4:4 + policy.max_seq_len + 1] += hist
 
                                 # early stop if reach max samples
                                 if (cfg.training.max_reconst_steps is not None) \
@@ -345,9 +376,19 @@ class TrainPolicyWorkspace(BaseWorkspace):
                     # logging
                     accelerator.wait_for_everyone()
                     loss_info = accelerator.reduce(loss_info, reduction='sum')
+                    pred_stats = accelerator.reduce(pred_stats, reduction='sum')
                     accelerator.wait_for_everyone()
                     if accelerator.is_main_process:
                         step_log['test_reconst_mse'] = (loss_info[0] / loss_info[1]).item()
+                        if pred_stats[1].item() > 0:
+                            mean_keep_k = (pred_stats[2] / pred_stats[1]).item()
+                            step_log['pred_mean_keep_k'] = mean_keep_k
+                            step_log['pred_token_ratio'] = mean_keep_k / float(policy.max_seq_len)
+                            step_log['pred_eos_rate'] = (pred_stats[3] / pred_stats[1]).item()
+                            for keep_k in range(policy.max_seq_len + 1):
+                                step_log[f'pred_keep_k_{keep_k}'] = (
+                                    pred_stats[4 + keep_k] / pred_stats[1]
+                                ).item()
 
                 # checkpoint
                 if accelerator.is_main_process and (self.epoch % cfg.training.checkpoint_every) == 0:

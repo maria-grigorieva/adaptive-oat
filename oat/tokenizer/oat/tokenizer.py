@@ -113,6 +113,65 @@ class OATTok(BaseTokenizer):
         recons = self.decode(latents, eval_keep_k=eval_keep_k)
         return recons
 
+    def compute_prefix_reconstruction_errors(
+        self,
+        samples: torch.Tensor,
+        keep_ks: List[int],
+    ) -> torch.Tensor:
+        # samples: (B, T, sample_dim)
+        if len(keep_ks) == 0:
+            raise ValueError("keep_ks must be non-empty")
+
+        nsamples = self.normalizer['action'].normalize(samples)
+        latents, _ = self.encode(samples)
+
+        prefix_errors = []
+        for keep_k in keep_ks:
+            recons = self.decode(latents, eval_keep_k=[keep_k] * samples.shape[0])
+            nrecons = self.normalizer['action'].normalize(recons)
+            mse = (nrecons - nsamples).pow(2).flatten(start_dim=1).mean(dim=1)
+            prefix_errors.append(mse)
+
+        return torch.stack(prefix_errors, dim=1)
+
+    def derive_oracle_keep_k(
+        self,
+        prefix_errors: torch.Tensor,
+        keep_ks: List[int],
+        tolerance: float = 1e-3,
+    ) -> torch.Tensor:
+        if prefix_errors.ndim != 2:
+            raise ValueError(f"prefix_errors must have shape [B, K], got {prefix_errors.shape}")
+        if len(keep_ks) == 0:
+            raise ValueError("keep_ks must be non-empty")
+        if prefix_errors.shape[1] != len(keep_ks):
+            raise ValueError(
+                f"prefix_errors second dim ({prefix_errors.shape[1]}) must match len(keep_ks) ({len(keep_ks)})"
+            )
+
+        keep_ks_tensor = torch.tensor(keep_ks, device=prefix_errors.device, dtype=torch.long)
+        sorted_keep_ks, sort_idx = torch.sort(keep_ks_tensor)
+        sorted_errors = prefix_errors[:, sort_idx]
+
+        full_error = sorted_errors[:, -1:]
+        valid_mask = sorted_errors <= (full_error + tolerance)
+        first_valid_idx = valid_mask.to(torch.int64).argmax(dim=1)
+        return sorted_keep_ks[first_valid_idx]
+
+    def compute_oracle_keep_k_from_samples(
+        self,
+        samples: torch.Tensor,
+        keep_ks: List[int],
+        tolerance: float = 1e-3,
+    ):
+        prefix_errors = self.compute_prefix_reconstruction_errors(samples, keep_ks)
+        oracle_keep_k = self.derive_oracle_keep_k(
+            prefix_errors=prefix_errors,
+            keep_ks=keep_ks,
+            tolerance=tolerance,
+        )
+        return oracle_keep_k, prefix_errors
+
     def tokenize(self, samples: torch.Tensor) -> torch.Tensor:
         # samples: (B, T, sample_dim)
         _, tokens = self.encode(samples)
@@ -120,22 +179,48 @@ class OATTok(BaseTokenizer):
 
     def detokenize(self, 
         tokens: Union[torch.Tensor, List[List[int]]],
+        token_lens: Optional[Union[torch.Tensor, List[int]]] = None,
     ) -> torch.Tensor:
         # tokens: (B, T') or list of list of int
-        
-        # standardize
-        if isinstance(tokens, list):
-            token_lens = [t.shape[1] for t in tokens]
-            tokens = torch.cat([
-                pad_token_seq(t, self.latent_horizon)
-                for t in tokens
-            ], dim=0)
-        elif isinstance(tokens, torch.Tensor):
-            token_lens = [tokens.shape[1]] * tokens.shape[0]
-            if tokens.shape[-1] < self.latent_horizon:
-                tokens = pad_token_seq(tokens, self.latent_horizon)
+
+        if token_lens is None:
+            # standardize
+            if isinstance(tokens, list):
+                token_lens = [t.shape[1] for t in tokens]
+                tokens = torch.cat([
+                    pad_token_seq(t, self.latent_horizon)
+                    for t in tokens
+                ], dim=0)
+            elif isinstance(tokens, torch.Tensor):
+                token_lens = [tokens.shape[1]] * tokens.shape[0]
+                if tokens.shape[-1] < self.latent_horizon:
+                    tokens = pad_token_seq(tokens, self.latent_horizon)
+            else:
+                raise ValueError(f'Unknown token type {type(tokens)}')
         else:
-            raise ValueError(f'Unknown token type {type(tokens)}')
+            if isinstance(token_lens, torch.Tensor):
+                token_lens = token_lens.tolist()
+            else:
+                token_lens = list(token_lens)
+
+            if isinstance(tokens, list):
+                if len(tokens) != len(token_lens):
+                    raise ValueError(
+                        f"Expected {len(token_lens)} token sequences, got {len(tokens)}"
+                    )
+                tokens = torch.cat([
+                    pad_token_seq(t, self.latent_horizon)
+                    for t in tokens
+                ], dim=0)
+            elif isinstance(tokens, torch.Tensor):
+                if tokens.shape[0] != len(token_lens):
+                    raise ValueError(
+                        f"Expected token_lens for {tokens.shape[0]} samples, got {len(token_lens)}"
+                    )
+                if tokens.shape[-1] < self.latent_horizon:
+                    tokens = pad_token_seq(tokens, self.latent_horizon)
+            else:
+                raise ValueError(f'Unknown token type {type(tokens)}')
 
         # codebook lookup & decode
         latents = self.quantizer.indices_to_embedding(tokens)

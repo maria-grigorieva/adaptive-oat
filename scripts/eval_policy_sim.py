@@ -25,6 +25,7 @@ import torch
 import wandb
 import json
 import numpy as np
+import time
 from oat.env_runner.base_runner import BaseRunner
 from oat.policy.base_policy import BasePolicy
 from typing import List, Optional
@@ -37,6 +38,7 @@ from typing import List, Optional
 @click.option('--temperature', default=None, type=float, help="temperature for policy inference")
 @click.option('--topk', default=None, type=int, help="topk for policy inference")
 @click.option('--use_k_tokens', default=None, type=int, help="number of tokens to use for policy inference")
+@click.option('--adaptive-halting/--no-adaptive-halting', default=False, help="enable EOS-based adaptive halting")
 def eval_policy_sim(
     checkpoint: str,
     output_dir: str,
@@ -46,6 +48,7 @@ def eval_policy_sim(
     temperature: Optional[float] = None,
     topk: Optional[int] = None,
     use_k_tokens: Optional[int] = None,
+    adaptive_halting: bool = False,
 ):
     if os.path.exists(output_dir):
         click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
@@ -94,10 +97,14 @@ def eval_policy_sim(
             kwargs['topk'] = topk
         if use_k_tokens is not None:
             kwargs['use_k_tokens'] = use_k_tokens
+        if adaptive_halting:
+            kwargs['adaptive_halting'] = True
+        run_start_time = time.perf_counter()
         runner_log = env_runner.run(
             policy,
             **kwargs
         )
+        runner_log['runtime_sec'] = time.perf_counter() - run_start_time
         
         # Store all runs for computing statistics
         all_runs = []
@@ -108,7 +115,9 @@ def eval_policy_sim(
         print(f"Exp 1: success rate = {runner_log['mean_success_rate']}")
         
         for i in range(num_exp - 1):
+            run_start_time = time.perf_counter()
             this_log = env_runner.run(policy, **kwargs)
+            this_log['runtime_sec'] = time.perf_counter() - run_start_time
             print(f"Exp {i + 2}: success rate = {this_log['mean_success_rate']}")
             all_runs.append({k: v for k, v in this_log.items() if not isinstance(v, list)})
             # merge logs

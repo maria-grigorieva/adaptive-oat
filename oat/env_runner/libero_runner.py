@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import tqdm
 import math
+import time
 import pathlib
 import dill
 import wandb.sdk.data_types.video as wandb_video
@@ -208,6 +209,9 @@ class LiberoRunner(BaseRunner):
         # allocate data
         all_video_paths = [None] * n_inits
         all_success = [False] * n_inits
+        all_token_lens = []
+        all_eos_generated = []
+        rollout_start_time = time.perf_counter()
 
         for chunk_idx in range(n_chunks):
             start = chunk_idx * n_envs
@@ -249,10 +253,21 @@ class LiberoRunner(BaseRunner):
 
                 # run policy
                 with torch.inference_mode():
-                    action = policy.predict_action({
+                    result = policy.predict_action({
                         port: obs_dict[port] 
                         for port in policy.get_observation_ports()
-                    }, **kwargs)['action'].detach().cpu().numpy()
+                    }, **kwargs)
+                    action = result['action'].detach().cpu().numpy()
+                    token_lens = result.get('token_lens', None)
+                    eos_generated = result.get('eos_generated', None)
+                    if token_lens is not None:
+                        all_token_lens.extend(
+                            token_lens[:this_n_active_envs].detach().cpu().tolist()
+                        )
+                    if eos_generated is not None:
+                        all_eos_generated.extend(
+                            eos_generated[:this_n_active_envs].detach().cpu().tolist()
+                        )
 
                 if not np.all(np.isfinite(action)):
                     raise RuntimeError("NaN of Inf action")
@@ -303,6 +318,16 @@ class LiberoRunner(BaseRunner):
             
         # log aggregate metrics
         log_data['mean_success_rate'] = np.mean(all_success)
+        if len(all_token_lens) > 0:
+            log_data['mean_action_tokens'] = float(np.mean(all_token_lens))
+            log_data['token_ratio'] = float(np.mean(all_token_lens) / policy.max_seq_len)
+            for keep_k in range(policy.max_seq_len + 1):
+                log_data[f'pred_keep_k_{keep_k}'] = float(
+                    np.mean(np.asarray(all_token_lens) == keep_k)
+                )
+        if len(all_eos_generated) > 0:
+            log_data['eos_prediction_rate'] = float(np.mean(all_eos_generated))
+        log_data['runtime_sec'] = time.perf_counter() - rollout_start_time
         
         return log_data
 

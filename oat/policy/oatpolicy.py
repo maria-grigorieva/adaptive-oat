@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from oat.policy.base_policy import BasePolicy
 from oat.tokenizer.oat.tokenizer import OATTok
@@ -10,6 +10,8 @@ from oat.model.autoregressive.transformer_cache import AutoregressiveModel
 
 
 class OATPolicy(BasePolicy):
+    loss_ignore_index = -100
+
     def __init__(
         self,
         shape_meta: Dict,
@@ -25,6 +27,9 @@ class OATPolicy(BasePolicy):
         # policy inference params
         temperature: float = 1.0,
         topk: int = 10,
+        use_adaptive_halting: bool = False,
+        halt_tolerance: float = 1e-3,
+        halt_keep_ks: Optional[List[int]] = None,
     ):
         super().__init__()
         
@@ -50,8 +55,17 @@ class OATPolicy(BasePolicy):
         # create AR model
         codebook_size = action_tokenizer.quantizer.codebook_size
         latent_horizon = action_tokenizer.latent_horizon
+        if halt_keep_ks is None:
+            halt_keep_ks = list(range(1, latent_horizon + 1))
+        if len(halt_keep_ks) == 0:
+            raise ValueError("halt_keep_ks must be non-empty")
+        if max(halt_keep_ks) > latent_horizon:
+            raise ValueError(
+                f"halt_keep_ks must be <= latent horizon ({latent_horizon}), got {halt_keep_ks}"
+            )
+        vocab_size = codebook_size + 2 if use_adaptive_halting else codebook_size + 1
         model = AutoregressiveModel(
-            vocab_size=codebook_size + 1,  # +1 for <BOS>
+            vocab_size=vocab_size,
             max_seq_len=latent_horizon + 1,
             max_cond_len=n_obs_steps,
             cond_dim=obs_feature_dim,
@@ -62,6 +76,7 @@ class OATPolicy(BasePolicy):
             p_drop_attn=dropout,
         )
         bos_id = codebook_size  # last token id for <BOS>
+        eos_id = codebook_size + 1 if use_adaptive_halting else None
 
         self.modalities = modalities
         self.obs_key_shapes = obs_key_shapes
@@ -71,12 +86,17 @@ class OATPolicy(BasePolicy):
         self.model = model
         self.max_seq_len = latent_horizon
         self.bos_id = bos_id
+        self.eos_id = eos_id
+        self.use_adaptive_halting = use_adaptive_halting
+        self.halt_tolerance = halt_tolerance
+        self.halt_keep_ks = list(halt_keep_ks)
         self.n_action_steps = n_action_steps
         self.n_obs_steps = n_obs_steps
         self.obs_feature_dim = obs_feature_dim
         self.action_dim = action_dim
         self.temperature = temperature
         self.topk = topk
+        self._last_forward_info = dict()
 
         # report
         num_obs_params = sum(p.numel() for p in obs_encoder.parameters())
@@ -126,6 +146,89 @@ class OATPolicy(BasePolicy):
         self.obs_encoder.set_normalizer(normalizer)
         # self.action_tokenizer.set_normalizer(normalizer)
 
+    def get_last_forward_info(self) -> Dict[str, torch.Tensor]:
+        return self._last_forward_info
+
+    def build_adaptive_training_batch(
+        self,
+        action_tokens: torch.Tensor,
+        oracle_keep_k: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not self.use_adaptive_halting:
+            raise RuntimeError("Adaptive halting batch construction requires use_adaptive_halting=True")
+
+        B, _ = action_tokens.shape
+        oracle_keep_k = oracle_keep_k.to(device=action_tokens.device, dtype=torch.long)
+        max_keep_k = int(oracle_keep_k.max().item())
+        seq_len = max_keep_k + 2  # <BOS> + tokens + <EOS>
+
+        full_sequences = torch.full(
+            (B, seq_len),
+            self.eos_id,
+            dtype=action_tokens.dtype,
+            device=action_tokens.device,
+        )
+        valid_mask = torch.zeros((B, seq_len), dtype=torch.bool, device=action_tokens.device)
+        full_sequences[:, 0] = self.bos_id
+        valid_mask[:, 0] = True
+
+        for batch_idx, keep_k in enumerate(oracle_keep_k.tolist()):
+            if keep_k > 0:
+                full_sequences[batch_idx, 1:1 + keep_k] = action_tokens[batch_idx, :keep_k]
+            full_sequences[batch_idx, 1 + keep_k] = self.eos_id
+            valid_mask[batch_idx, :keep_k + 2] = True
+
+        model_tokens = full_sequences[:, :-1]
+        target_tokens = full_sequences[:, 1:].clone()
+        target_mask = valid_mask[:, 1:]
+        target_tokens[~target_mask] = self.loss_ignore_index
+        return model_tokens, target_tokens, target_mask
+
+    def extract_action_prefix(
+        self,
+        generated_tokens: torch.Tensor,
+        max_action_tokens: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        B, generated_len = generated_tokens.shape
+        device = generated_tokens.device
+
+        decode_tokens = torch.zeros(
+            (B, max_action_tokens),
+            dtype=generated_tokens.dtype,
+            device=device,
+        )
+        copy_len = min(generated_len, max_action_tokens)
+        if copy_len > 0:
+            decode_tokens[:, :copy_len] = generated_tokens[:, :copy_len]
+
+        if not self.use_adaptive_halting:
+            token_lens = torch.full((B,), copy_len, dtype=torch.long, device=device)
+            eos_generated = torch.zeros(B, dtype=torch.bool, device=device)
+            return decode_tokens, token_lens, eos_generated
+
+        eos_mask = generated_tokens == self.eos_id
+        has_eos = eos_mask.any(dim=1)
+        first_eos_idx = eos_mask.to(torch.int64).argmax(dim=1)
+        token_lens = torch.where(
+            has_eos,
+            first_eos_idx,
+            torch.full((B,), copy_len, dtype=torch.long, device=device),
+        )
+        token_lens = token_lens.clamp(min=0, max=max_action_tokens)
+        eos_generated = has_eos & (first_eos_idx <= max_action_tokens)
+
+        token_positions = torch.arange(max_action_tokens, device=device).unsqueeze(0)
+        decode_tokens[token_positions >= token_lens.unsqueeze(1)] = 0
+        return decode_tokens, token_lens, eos_generated
+
+    def _oracle_keep_k_from_batch(self, batch) -> torch.Tensor:
+        oracle_keep_k, _ = self.action_tokenizer.compute_oracle_keep_k_from_samples(
+            samples=batch['action'],
+            keep_ks=self.halt_keep_ks,
+            tolerance=self.halt_tolerance,
+        )
+        return oracle_keep_k.to(device=batch['action'].device, dtype=torch.long)
+
     def get_optimizer(
         self, 
         policy_lr: float,
@@ -172,11 +275,16 @@ class OATPolicy(BasePolicy):
         use_k_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         topk: Optional[int] = None,
+        adaptive_halting: Optional[bool] = None,
     ) -> Dict[str, torch.Tensor]:
         if use_k_tokens is None:
             use_k_tokens = self.max_seq_len
         else:
             use_k_tokens = min(use_k_tokens, self.max_seq_len)
+        if adaptive_halting is None:
+            adaptive_halting = self.use_adaptive_halting
+        elif adaptive_halting and not self.use_adaptive_halting:
+            raise ValueError("Adaptive halting is not enabled for this policy checkpoint")
         if temperature is None:
             temperature = self.temperature
         if topk is None:
@@ -191,18 +299,25 @@ class OATPolicy(BasePolicy):
             (B, 1), self.bos_id, 
             dtype=torch.long, device=self.device
         )
-        action_tokens = self.model.generate(
+        generated_tokens = self.model.generate(
             action_tokens,
             cond=features,
-            max_new_tokens=use_k_tokens,
+            max_new_tokens=use_k_tokens + 1 if adaptive_halting else use_k_tokens,
             temperature=temperature,
             top_k=topk,
-        )[:, 1:]    # [B, max_seq_len], drop <BOS>
+            eos_id=self.eos_id if adaptive_halting else None,
+        )[:, 1:]    # drop <BOS>
+
+        decode_tokens, token_lens, eos_generated = self.extract_action_prefix(
+            generated_tokens=generated_tokens,
+            max_action_tokens=use_k_tokens,
+        )
 
         # decode action tokens
         with torch.inference_mode():
             action_pred = self.action_tokenizer.detokenize(
-                tokens=action_tokens,
+                tokens=decode_tokens,
+                token_lens=token_lens,
             )
 
         # receeding horizon
@@ -210,7 +325,10 @@ class OATPolicy(BasePolicy):
 
         result = {
             'action': action,
-            'action_pred': action_pred
+            'action_pred': action_pred,
+            'action_tokens': decode_tokens,
+            'token_lens': token_lens,
+            'eos_generated': eos_generated,
         }
         return result
 
@@ -219,6 +337,9 @@ class OATPolicy(BasePolicy):
         # tokenize trajectory
         with torch.inference_mode():
             action_tokens = self.action_tokenizer.tokenize(batch['action'])
+            oracle_keep_k = None
+            if self.use_adaptive_halting:
+                oracle_keep_k = self._oracle_keep_k_from_batch(batch)
 
         B = batch['action'].shape[0]
         device = batch['action'].device
@@ -226,22 +347,48 @@ class OATPolicy(BasePolicy):
         # encode observation
         features = self.obs_encoder(batch['obs'])   # [B, To, d]
 
-        # prepend <BOS> token
-        action_tokens = torch.cat([
-            torch.full(
-                (B, 1), self.bos_id, 
-                dtype=torch.long, device=device
-            ),
-            action_tokens
-        ], dim=1)
+        if self.use_adaptive_halting:
+            model_tokens, target_tokens, target_mask = self.build_adaptive_training_batch(
+                action_tokens=action_tokens,
+                oracle_keep_k=oracle_keep_k,
+            )
+            logits = self.model(model_tokens, cond=features)
+            vocab_size = logits.size(-1)
+            loss = F.cross_entropy(
+                logits.reshape(-1, vocab_size),
+                target_tokens.reshape(-1),
+                ignore_index=self.loss_ignore_index,
+            )
+            mean_keep_k = oracle_keep_k.to(torch.float32).mean()
+            token_ratio = mean_keep_k / float(self.max_seq_len)
+            self._last_forward_info = {
+                'mean_keep_k': mean_keep_k.detach(),
+                'token_ratio': token_ratio.detach(),
+                'batch_size': torch.tensor(float(B), device=device),
+                'target_mask_tokens': target_mask.sum().to(torch.float32).detach(),
+            }
+        else:
+            # prepend <BOS> token
+            action_tokens = torch.cat([
+                torch.full(
+                    (B, 1), self.bos_id, 
+                    dtype=torch.long, device=device
+                ),
+                action_tokens
+            ], dim=1)
 
-        # forward model
-        logits = self.model(action_tokens[:, :-1], cond=features)
+            # forward model
+            logits = self.model(action_tokens[:, :-1], cond=features)
 
-        # compute loss
-        vocab_size = logits.size(-1)
-        loss = F.cross_entropy(
-            logits.reshape(-1, vocab_size),     # (B*T, vocab_size)
-            action_tokens[:, 1:].reshape(-1)    # (B*T,)
-        )
+            # compute loss
+            vocab_size = logits.size(-1)
+            loss = F.cross_entropy(
+                logits.reshape(-1, vocab_size),     # (B*T, vocab_size)
+                action_tokens[:, 1:].reshape(-1)    # (B*T,)
+            )
+            self._last_forward_info = {
+                'mean_keep_k': torch.tensor(float(self.max_seq_len), device=device),
+                'token_ratio': torch.tensor(1.0, device=device),
+                'batch_size': torch.tensor(float(B), device=device),
+            }
         return loss
