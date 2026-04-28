@@ -61,3 +61,124 @@ fixed_k_8 | 8.0000 ± 0.0000 | 0.0019 ± 0.0001 | 1.0000 ± 0.0000 | 0.0001 ± 0
 2026-04-28 15:55:23,579 | WARNING | Skipping LIBERO smoke evaluation because required dependencies are unavailable: libero: No module named 'libero'; robosuite: No module named 'robosuite'; mujoco: No module named 'mujoco'
 2026-04-28 15:55:23,580 | INFO | LIBERO smoke status written to /Users/maria/MIPT/AOPT_assignment/adaptive-oat/results/libero_smoke/libero_smoke_status.json
 2026-04-28 15:55:23,581 | INFO | Artifacts written to /Users/maria/MIPT/AOPT_assignment/adaptive-oat/results/libero_smoke
+2026-04-28 16:32:18,675 | INFO | Starting adaptive halting evaluation with args={'mode': 'all', 'keep_ks': [1, 2, 4, 8], 'num_samples': 768, 'num_runs': 10, 'device': 'cpu', 'output_dir': 'results', 'seed': 0, 'policy_checkpoint': None, 'libero_eval': False, 'libero_smoke_eval': False, 'libero_suite': 'libero_spatial', 'libero_num_tasks': 1, 'libero_num_episodes': 1, 'libero_headless': True, 'include_random_baseline': False, 'skip_plots': False, 'halt_tolerance': 0.001}
+2026-04-28 16:32:19,135 | INFO | Synthetic run 1/10 complete | oracle distribution={'1': 0.0, '2': 0.33043478260869563, '4': 0.06086956521739131, '8': 0.6086956521739131}
+2026-04-28 16:32:19,470 | INFO | Synthetic run 2/10 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.07391304347826087, '8': 0.5521739130434783}
+2026-04-28 16:32:19,801 | INFO | Synthetic run 3/10 complete | oracle distribution={'1': 0.0, '2': 0.3695652173913043, '4': 0.04782608695652174, '8': 0.5826086956521739}
+2026-04-28 16:32:20,137 | INFO | Synthetic run 4/10 complete | oracle distribution={'1': 0.0, '2': 0.3869565217391304, '4': 0.05217391304347826, '8': 0.5608695652173913}
+2026-04-28 16:32:20,449 | INFO | Synthetic run 5/10 complete | oracle distribution={'1': 0.0, '2': 0.3521739130434783, '4': 0.04782608695652174, '8': 0.6}
+2026-04-28 16:32:20,806 | INFO | Synthetic run 6/10 complete | oracle distribution={'1': 0.0, '2': 0.34347826086956523, '4': 0.07391304347826087, '8': 0.5826086956521739}
+2026-04-28 16:32:21,171 | INFO | Synthetic run 7/10 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.0782608695652174, '8': 0.5478260869565217}
+2026-04-28 16:32:21,625 | INFO | Synthetic run 8/10 complete | oracle distribution={'1': 0.0, '2': 0.3565217391304348, '4': 0.04782608695652174, '8': 0.5956521739130435}
+2026-04-28 16:32:21,995 | INFO | Synthetic run 9/10 complete | oracle distribution={'1': 0.0, '2': 0.4, '4': 0.06956521739130435, '8': 0.5304347826086957}
+2026-04-28 16:32:22,326 | INFO | Synthetic run 10/10 complete | oracle distribution={'1': 0.0, '2': 0.3347826086956522, '4': 0.05652173913043478, '8': 0.6086956521739131}
+2026-04-28 16:32:22,345 | INFO | 
+
+Paper-ready summary
+method | avg_K mean±std | recon_mse mean±std | token_ratio mean±std | runtime_sec mean±std | eos_rate mean±std | halting_acc mean±std
+--- | --- | --- | --- | --- | --- | ---
+adaptive_halting | 5.6557 ± 0.1646 | 0.0021 ± 0.0001 | 0.7070 ± 0.0206 | 0.0001 ± 0.0000 | 1.0000 ± 0.0000 | 0.9426 ± 0.0130
+fixed_k_1 | 1.0000 ± 0.0000 | 0.0307 ± 0.0007 | 0.1250 ± 0.0000 | 0.0001 ± 0.0001 | 0.0000 ± 0.0000 | 0.0000 ± 0.0000
+fixed_k_2 | 2.0000 ± 0.0000 | 0.0094 ± 0.0007 | 0.2500 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.3622 ± 0.0215
+fixed_k_4 | 4.0000 ± 0.0000 | 0.0043 ± 0.0003 | 0.5000 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.0609 ± 0.0115
+fixed_k_8 | 8.0000 ± 0.0000 | 0.0019 ± 0.0001 | 1.0000 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.5770 ± 0.0262
+2026-04-28 16:32:22,346 | INFO | Generating plots: /opt/miniconda3/bin/python experiments/plot_results.py --input results/adaptive_halting_summary.csv --output-dir results/plots
+2026-04-28 16:32:22,440 | INFO | Artifacts written to /Users/maria/Documents/New project 2/results
+2026-04-28 16:32:35,379 | INFO | Starting adaptive halting evaluation with args={'mode': 'all', 'keep_ks': [1, 2, 4, 8], 'num_samples': 768, 'num_runs': 10, 'device': 'cpu', 'output_dir': 'results/libero_smoke', 'seed': 0, 'policy_checkpoint': None, 'libero_eval': False, 'libero_smoke_eval': True, 'libero_suite': 'libero_spatial', 'libero_num_tasks': 1, 'libero_num_episodes': 1, 'libero_headless': True, 'include_random_baseline': False, 'skip_plots': False, 'halt_tolerance': 0.001}
+2026-04-28 16:32:35,721 | INFO | Synthetic run 1/10 complete | oracle distribution={'1': 0.0, '2': 0.33043478260869563, '4': 0.06086956521739131, '8': 0.6086956521739131}
+2026-04-28 16:32:36,065 | INFO | Synthetic run 2/10 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.07391304347826087, '8': 0.5521739130434783}
+2026-04-28 16:32:36,452 | INFO | Synthetic run 3/10 complete | oracle distribution={'1': 0.0, '2': 0.3695652173913043, '4': 0.04782608695652174, '8': 0.5826086956521739}
+2026-04-28 16:32:36,807 | INFO | Synthetic run 4/10 complete | oracle distribution={'1': 0.0, '2': 0.3869565217391304, '4': 0.05217391304347826, '8': 0.5608695652173913}
+2026-04-28 16:32:37,152 | INFO | Synthetic run 5/10 complete | oracle distribution={'1': 0.0, '2': 0.3521739130434783, '4': 0.04782608695652174, '8': 0.6}
+2026-04-28 16:32:37,496 | INFO | Synthetic run 6/10 complete | oracle distribution={'1': 0.0, '2': 0.34347826086956523, '4': 0.07391304347826087, '8': 0.5826086956521739}
+2026-04-28 16:32:37,915 | INFO | Synthetic run 7/10 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.0782608695652174, '8': 0.5478260869565217}
+2026-04-28 16:32:38,258 | INFO | Synthetic run 8/10 complete | oracle distribution={'1': 0.0, '2': 0.3565217391304348, '4': 0.04782608695652174, '8': 0.5956521739130435}
+2026-04-28 16:32:38,593 | INFO | Synthetic run 9/10 complete | oracle distribution={'1': 0.0, '2': 0.4, '4': 0.06956521739130435, '8': 0.5304347826086957}
+2026-04-28 16:32:38,945 | INFO | Synthetic run 10/10 complete | oracle distribution={'1': 0.0, '2': 0.3347826086956522, '4': 0.05652173913043478, '8': 0.6086956521739131}
+2026-04-28 16:32:38,961 | INFO | 
+
+Paper-ready summary
+method | avg_K mean±std | recon_mse mean±std | token_ratio mean±std | runtime_sec mean±std | eos_rate mean±std | halting_acc mean±std
+--- | --- | --- | --- | --- | --- | ---
+adaptive_halting | 5.6557 ± 0.1646 | 0.0021 ± 0.0001 | 0.7070 ± 0.0206 | 0.0001 ± 0.0000 | 1.0000 ± 0.0000 | 0.9426 ± 0.0130
+fixed_k_1 | 1.0000 ± 0.0000 | 0.0307 ± 0.0007 | 0.1250 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.0000 ± 0.0000
+fixed_k_2 | 2.0000 ± 0.0000 | 0.0094 ± 0.0007 | 0.2500 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.3622 ± 0.0215
+fixed_k_4 | 4.0000 ± 0.0000 | 0.0043 ± 0.0003 | 0.5000 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.0609 ± 0.0115
+fixed_k_8 | 8.0000 ± 0.0000 | 0.0019 ± 0.0001 | 1.0000 ± 0.0000 | 0.0002 ± 0.0003 | 0.0000 ± 0.0000 | 0.5770 ± 0.0262
+2026-04-28 16:32:38,962 | INFO | Generating plots: /opt/miniconda3/bin/python experiments/plot_results.py --input results/libero_smoke/adaptive_halting_summary.csv --output-dir results/libero_smoke/plots
+2026-04-28 16:32:39,058 | WARNING | Skipping LIBERO smoke evaluation because required dependencies are unavailable: libero: ModuleNotFoundError: No module named 'libero'; robosuite: ModuleNotFoundError: No module named 'robosuite'; mujoco: ModuleNotFoundError: No module named 'mujoco'
+2026-04-28 16:32:39,060 | INFO | LIBERO smoke summary written to /Users/maria/Documents/New project 2/results/libero_smoke/libero_smoke_summary.csv
+2026-04-28 16:32:39,061 | INFO | LIBERO smoke status written to /Users/maria/Documents/New project 2/results/libero_smoke/libero_smoke_status.json
+2026-04-28 16:32:39,061 | INFO | Artifacts written to /Users/maria/Documents/New project 2/results/libero_smoke
+2026-04-28 16:46:18,160 | INFO | Starting adaptive halting evaluation with args={'mode': 'all', 'keep_ks': [1, 2, 4, 8], 'num_samples': 768, 'num_runs': 30, 'device': 'cpu', 'output_dir': 'results_30runs', 'seed': 0, 'policy_checkpoint': None, 'libero_eval': False, 'libero_smoke_eval': False, 'libero_suite': 'libero_spatial', 'libero_num_tasks': 1, 'libero_num_episodes': 1, 'libero_headless': True, 'include_random_baseline': True, 'skip_plots': False, 'halt_tolerance': 0.001}
+2026-04-28 16:46:18,608 | INFO | Synthetic run 1/30 complete | oracle distribution={'1': 0.0, '2': 0.33043478260869563, '4': 0.06086956521739131, '8': 0.6086956521739131}
+2026-04-28 16:46:19,024 | INFO | Synthetic run 2/30 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.07391304347826087, '8': 0.5521739130434783}
+2026-04-28 16:46:19,447 | INFO | Synthetic run 3/30 complete | oracle distribution={'1': 0.0, '2': 0.3695652173913043, '4': 0.04782608695652174, '8': 0.5826086956521739}
+2026-04-28 16:46:19,892 | INFO | Synthetic run 4/30 complete | oracle distribution={'1': 0.0, '2': 0.3869565217391304, '4': 0.05217391304347826, '8': 0.5608695652173913}
+2026-04-28 16:46:20,247 | INFO | Synthetic run 5/30 complete | oracle distribution={'1': 0.0, '2': 0.3521739130434783, '4': 0.04782608695652174, '8': 0.6}
+2026-04-28 16:46:20,591 | INFO | Synthetic run 6/30 complete | oracle distribution={'1': 0.0, '2': 0.34347826086956523, '4': 0.07391304347826087, '8': 0.5826086956521739}
+2026-04-28 16:46:21,012 | INFO | Synthetic run 7/30 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.0782608695652174, '8': 0.5478260869565217}
+2026-04-28 16:46:21,578 | INFO | Synthetic run 8/30 complete | oracle distribution={'1': 0.0, '2': 0.3565217391304348, '4': 0.04782608695652174, '8': 0.5956521739130435}
+2026-04-28 16:46:22,056 | INFO | Synthetic run 9/30 complete | oracle distribution={'1': 0.0, '2': 0.4, '4': 0.06956521739130435, '8': 0.5304347826086957}
+2026-04-28 16:46:22,927 | INFO | Synthetic run 10/30 complete | oracle distribution={'1': 0.0, '2': 0.3347826086956522, '4': 0.05652173913043478, '8': 0.6086956521739131}
+2026-04-28 16:46:23,407 | INFO | Synthetic run 11/30 complete | oracle distribution={'1': 0.0, '2': 0.3521739130434783, '4': 0.06521739130434782, '8': 0.5826086956521739}
+2026-04-28 16:46:23,915 | INFO | Synthetic run 12/30 complete | oracle distribution={'1': 0.0, '2': 0.391304347826087, '4': 0.0782608695652174, '8': 0.5304347826086957}
+2026-04-28 16:46:24,311 | INFO | Synthetic run 13/30 complete | oracle distribution={'1': 0.0, '2': 0.391304347826087, '4': 0.06956521739130435, '8': 0.5391304347826087}
+2026-04-28 16:46:24,776 | INFO | Synthetic run 14/30 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.06956521739130435, '8': 0.5565217391304348}
+2026-04-28 16:46:25,214 | INFO | Synthetic run 15/30 complete | oracle distribution={'1': 0.0, '2': 0.3347826086956522, '4': 0.0782608695652174, '8': 0.5869565217391305}
+2026-04-28 16:46:25,609 | INFO | Synthetic run 16/30 complete | oracle distribution={'1': 0.0, '2': 0.2956521739130435, '4': 0.04782608695652174, '8': 0.6565217391304348}
+2026-04-28 16:46:26,020 | INFO | Synthetic run 17/30 complete | oracle distribution={'1': 0.0, '2': 0.3391304347826087, '4': 0.0782608695652174, '8': 0.5826086956521739}
+2026-04-28 16:46:26,391 | INFO | Synthetic run 18/30 complete | oracle distribution={'1': 0.0, '2': 0.36086956521739133, '4': 0.08695652173913043, '8': 0.5521739130434783}
+2026-04-28 16:46:26,783 | INFO | Synthetic run 19/30 complete | oracle distribution={'1': 0.0, '2': 0.3695652173913043, '4': 0.05217391304347826, '8': 0.5782608695652174}
+2026-04-28 16:46:27,185 | INFO | Synthetic run 20/30 complete | oracle distribution={'1': 0.0, '2': 0.391304347826087, '4': 0.06521739130434782, '8': 0.5434782608695652}
+2026-04-28 16:46:27,587 | INFO | Synthetic run 21/30 complete | oracle distribution={'1': 0.0, '2': 0.32608695652173914, '4': 0.06521739130434782, '8': 0.6086956521739131}
+2026-04-28 16:46:27,996 | INFO | Synthetic run 22/30 complete | oracle distribution={'1': 0.0, '2': 0.40869565217391307, '4': 0.04782608695652174, '8': 0.5434782608695652}
+2026-04-28 16:46:28,398 | INFO | Synthetic run 23/30 complete | oracle distribution={'1': 0.0, '2': 0.3695652173913043, '4': 0.06086956521739131, '8': 0.5695652173913044}
+2026-04-28 16:46:28,920 | INFO | Synthetic run 24/30 complete | oracle distribution={'1': 0.0, '2': 0.3391304347826087, '4': 0.06521739130434782, '8': 0.5956521739130435}
+2026-04-28 16:46:29,435 | INFO | Synthetic run 25/30 complete | oracle distribution={'1': 0.0, '2': 0.34347826086956523, '4': 0.05652173913043478, '8': 0.6}
+2026-04-28 16:46:29,822 | INFO | Synthetic run 26/30 complete | oracle distribution={'1': 0.0, '2': 0.34347826086956523, '4': 0.05652173913043478, '8': 0.6}
+2026-04-28 16:46:30,228 | INFO | Synthetic run 27/30 complete | oracle distribution={'1': 0.0, '2': 0.3652173913043478, '4': 0.05652173913043478, '8': 0.5782608695652174}
+2026-04-28 16:46:30,605 | INFO | Synthetic run 28/30 complete | oracle distribution={'1': 0.0, '2': 0.3217391304347826, '4': 0.05217391304347826, '8': 0.6260869565217392}
+2026-04-28 16:46:31,044 | INFO | Synthetic run 29/30 complete | oracle distribution={'1': 0.0, '2': 0.36086956521739133, '4': 0.06086956521739131, '8': 0.5782608695652174}
+2026-04-28 16:46:31,447 | INFO | Synthetic run 30/30 complete | oracle distribution={'1': 0.0, '2': 0.3173913043478261, '4': 0.06086956521739131, '8': 0.6217391304347826}
+2026-04-28 16:46:31,520 | INFO | 
+
+Paper-ready summary
+method | avg_K mean±std | recon_mse mean±std | token_ratio mean±std | runtime_sec mean±std | eos_rate mean±std | halting_acc mean±std
+--- | --- | --- | --- | --- | --- | ---
+adaptive_halting | 5.6794 ± 0.1648 | 0.0020 ± 0.0001 | 0.7099 ± 0.0206 | 0.0001 ± 0.0000 | 1.0000 ± 0.0000 | 0.9386 ± 0.0121
+fixed_k_1 | 1.0000 ± 0.0000 | 0.0305 ± 0.0011 | 0.1250 ± 0.0000 | 0.0003 ± 0.0008 | 0.0000 ± 0.0000 | 0.0000 ± 0.0000
+fixed_k_2 | 2.0000 ± 0.0000 | 0.0093 ± 0.0007 | 0.2500 ± 0.0000 | 0.0002 ± 0.0005 | 0.0000 ± 0.0000 | 0.3572 ± 0.0264
+fixed_k_4 | 4.0000 ± 0.0000 | 0.0042 ± 0.0003 | 0.5000 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.0628 ± 0.0109
+fixed_k_8 | 8.0000 ± 0.0000 | 0.0018 ± 0.0001 | 1.0000 ± 0.0000 | 0.0001 ± 0.0001 | 0.0000 ± 0.0000 | 0.5800 ± 0.0299
+oracle_k | 5.6055 ± 0.1698 | 0.0020 ± 0.0001 | 0.7007 ± 0.0212 | 0.0001 ± 0.0001 | 0.4200 ± 0.0299 | 1.0000 ± 0.0000
+random_k | 3.8081 ± 0.1755 | 0.0113 ± 0.0010 | 0.4760 ± 0.0219 | 0.0002 ± 0.0001 | 1.0000 ± 0.0000 | 0.2532 ± 0.0210
+2026-04-28 16:46:31,520 | INFO | Generating plots: /opt/miniconda3/bin/python experiments/plot_results.py --input results_30runs/adaptive_halting_summary.csv --output-dir results_30runs/plots
+2026-04-28 16:46:31,621 | INFO | Artifacts written to /Users/maria/Documents/New project 2/results_30runs
+2026-04-28 16:46:46,419 | INFO | Starting adaptive halting evaluation with args={'mode': 'all', 'keep_ks': [1, 2, 4, 8], 'num_samples': 768, 'num_runs': 10, 'device': 'cpu', 'output_dir': 'results/libero_smoke', 'seed': 0, 'policy_checkpoint': None, 'libero_eval': False, 'libero_smoke_eval': True, 'libero_suite': 'libero_spatial', 'libero_num_tasks': 1, 'libero_num_episodes': 1, 'libero_headless': True, 'include_random_baseline': False, 'skip_plots': False, 'halt_tolerance': 0.001}
+2026-04-28 16:46:47,985 | INFO | Synthetic run 1/10 complete | oracle distribution={'1': 0.0, '2': 0.33043478260869563, '4': 0.06086956521739131, '8': 0.6086956521739131}
+2026-04-28 16:46:49,087 | INFO | Synthetic run 2/10 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.07391304347826087, '8': 0.5521739130434783}
+2026-04-28 16:46:50,320 | INFO | Synthetic run 3/10 complete | oracle distribution={'1': 0.0, '2': 0.3695652173913043, '4': 0.04782608695652174, '8': 0.5826086956521739}
+2026-04-28 16:46:51,449 | INFO | Synthetic run 4/10 complete | oracle distribution={'1': 0.0, '2': 0.3869565217391304, '4': 0.05217391304347826, '8': 0.5608695652173913}
+2026-04-28 16:46:52,674 | INFO | Synthetic run 5/10 complete | oracle distribution={'1': 0.0, '2': 0.3521739130434783, '4': 0.04782608695652174, '8': 0.6}
+2026-04-28 16:46:53,945 | INFO | Synthetic run 6/10 complete | oracle distribution={'1': 0.0, '2': 0.34347826086956523, '4': 0.07391304347826087, '8': 0.5826086956521739}
+2026-04-28 16:46:55,196 | INFO | Synthetic run 7/10 complete | oracle distribution={'1': 0.0, '2': 0.3739130434782609, '4': 0.0782608695652174, '8': 0.5478260869565217}
+2026-04-28 16:46:56,331 | INFO | Synthetic run 8/10 complete | oracle distribution={'1': 0.0, '2': 0.3565217391304348, '4': 0.04782608695652174, '8': 0.5956521739130435}
+2026-04-28 16:46:57,705 | INFO | Synthetic run 9/10 complete | oracle distribution={'1': 0.0, '2': 0.4, '4': 0.06956521739130435, '8': 0.5304347826086957}
+2026-04-28 16:46:59,074 | INFO | Synthetic run 10/10 complete | oracle distribution={'1': 0.0, '2': 0.3347826086956522, '4': 0.05652173913043478, '8': 0.6086956521739131}
+2026-04-28 16:46:59,111 | INFO | 
+
+Paper-ready summary
+method | avg_K mean±std | recon_mse mean±std | token_ratio mean±std | runtime_sec mean±std | eos_rate mean±std | halting_acc mean±std
+--- | --- | --- | --- | --- | --- | ---
+adaptive_halting | 5.6557 ± 0.1646 | 0.0021 ± 0.0001 | 0.7070 ± 0.0206 | 0.0001 ± 0.0000 | 1.0000 ± 0.0000 | 0.9426 ± 0.0130
+fixed_k_1 | 1.0000 ± 0.0000 | 0.0307 ± 0.0007 | 0.1250 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.0000 ± 0.0000
+fixed_k_2 | 2.0000 ± 0.0000 | 0.0094 ± 0.0007 | 0.2500 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.3622 ± 0.0215
+fixed_k_4 | 4.0000 ± 0.0000 | 0.0043 ± 0.0003 | 0.5000 ± 0.0000 | 0.0026 ± 0.0069 | 0.0000 ± 0.0000 | 0.0609 ± 0.0115
+fixed_k_8 | 8.0000 ± 0.0000 | 0.0019 ± 0.0001 | 1.0000 ± 0.0000 | 0.0001 ± 0.0000 | 0.0000 ± 0.0000 | 0.5770 ± 0.0262
+oracle_k | 5.5835 ± 0.1446 | 0.0021 ± 0.0001 | 0.6979 ± 0.0181 | 0.0001 ± 0.0001 | 0.4230 ± 0.0262 | 1.0000 ± 0.0000
+2026-04-28 16:46:59,112 | INFO | Generating plots: /opt/miniconda3/bin/python experiments/plot_results.py --input results/libero_smoke/adaptive_halting_summary.csv --output-dir results/libero_smoke/plots
+2026-04-28 16:47:02,001 | WARNING | Skipping LIBERO smoke evaluation because required dependencies are unavailable: libero: ModuleNotFoundError: No module named 'libero'; robosuite: ModuleNotFoundError: No module named 'robosuite'
+2026-04-28 16:47:02,004 | INFO | LIBERO smoke summary written to /Users/maria/Documents/New project 2/results/libero_smoke/libero_smoke_summary.csv
+2026-04-28 16:47:02,004 | INFO | LIBERO smoke status written to /Users/maria/Documents/New project 2/results/libero_smoke/libero_smoke_status.json
+2026-04-28 16:47:02,004 | INFO | Artifacts written to /Users/maria/Documents/New project 2/results/libero_smoke
