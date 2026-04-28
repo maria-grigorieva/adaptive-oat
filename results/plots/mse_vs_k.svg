@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="520" viewBox="0 0 880 520">
+<rect x="0" y="0" width="880" height="520" fill="#ffffff" />
+<line x1="90" y1="450" x2="840" y2="450" stroke="#222" stroke-width="2" />
+<line x1="90" y1="450" x2="90" y2="40" stroke="#222" stroke-width="2" />
+<line x1="90.00" y1="450" x2="90.00" y2="458" stroke="#444" />
+<text x="90.00" y="478" font-size="14" text-anchor="middle" fill="#222">1.00</text>
+<line x1="197.14" y1="450" x2="197.14" y2="458" stroke="#444" />
+<text x="197.14" y="478" font-size="14" text-anchor="middle" fill="#222">2.00</text>
+<line x1="411.43" y1="450" x2="411.43" y2="458" stroke="#444" />
+<text x="411.43" y="478" font-size="14" text-anchor="middle" fill="#222">4.00</text>
+<line x1="590.31" y1="450" x2="590.31" y2="458" stroke="#444" />
+<text x="590.31" y="478" font-size="14" text-anchor="middle" fill="#222">5.67</text>
+<line x1="840.00" y1="450" x2="840.00" y2="458" stroke="#444" />
+<text x="840.00" y="478" font-size="14" text-anchor="middle" fill="#222">8.00</text>
+<line x1="90" y1="450.00" x2="840" y2="450.00" stroke="#e6e6e6" />
+<text x="78" y="454.00" font-size="14" text-anchor="end" fill="#222">0.00195</text>
+<line x1="90" y1="347.50" x2="840" y2="347.50" stroke="#e6e6e6" />
+<text x="78" y="351.50" font-size="14" text-anchor="end" fill="#222">0.00931</text>
+<line x1="90" y1="245.00" x2="840" y2="245.00" stroke="#e6e6e6" />
+<text x="78" y="249.00" font-size="14" text-anchor="end" fill="#222">0.01668</text>
+<line x1="90" y1="142.50" x2="840" y2="142.50" stroke="#e6e6e6" />
+<text x="78" y="146.50" font-size="14" text-anchor="end" fill="#222">0.02404</text>
+<line x1="90" y1="40.00" x2="840" y2="40.00" stroke="#e6e6e6" />
+<text x="78" y="44.00" font-size="14" text-anchor="end" fill="#222">0.03141</text>
+<polyline points="90.00,40.00 197.14,340.85 411.43,414.93 840.00,450.00" fill="none" stroke="#1f77b4" stroke-width="3" />
+<circle cx="90.00" cy="40.00" r="5" fill="#1f77b4" />
+<circle cx="197.14" cy="340.85" r="5" fill="#1f77b4" />
+<circle cx="411.43" cy="414.93" r="5" fill="#1f77b4" />
+<circle cx="840.00" cy="450.00" r="5" fill="#1f77b4" />
+<circle cx="590.31" cy="446.64" r="7" fill="#d62728" />
+<text x="602.31" y="438.64" font-size="14" fill="#d62728">adaptive</text>
+<text x="440" y="28" font-size="22" text-anchor="middle" fill="#111">Reconstruction MSE vs Prefix Depth</text>
+<text x="465.00" y="502" font-size="16" text-anchor="middle" fill="#222">Average prefix depth K</text>
+<text x="22" y="245.00" font-size="16" text-anchor="middle" fill="#222" transform="rotate(-90 22 245.00)">Reconstruction MSE</text>
+</svg>
