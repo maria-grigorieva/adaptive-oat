@@ -42,7 +42,24 @@ python experiments/plot_results.py \
   --output-dir results/plots
 ```
 
-### Optional CPU-only LIBERO smoke evaluation
+## Optional LIBERO Smoke Evaluation
+
+This is not the main quantitative result for the learned adaptive halting prototype. It is only an integration smoke test for the optional robotics path.
+
+Full LIBERO evaluation requires valid checkpoints, a working MuJoCo / robosuite / LIBERO stack, and stronger compute than a typical CPU-only workstation. On CPU-only machines, this smoke path may be skipped gracefully.
+
+### Check the optional environment
+
+```bash
+python experiments/check_libero_env.py \
+  --output-dir results/libero_smoke
+```
+
+This writes:
+
+- `results/libero_smoke/libero_env_check.json`
+
+### Run the optional smoke evaluation
 
 ```bash
 python experiments/run_adaptive_halting_eval.py \
@@ -53,7 +70,18 @@ python experiments/run_adaptive_halting_eval.py \
   --output-dir results/libero_smoke
 ```
 
-This smoke path is optional and may be skipped automatically on weak CPU-only machines or when LIBERO / MuJoCo / robosuite dependencies are unavailable. The script will write a `libero_smoke_status.json` file explaining whether it ran or why it was skipped.
+This smoke path is optional and may be skipped automatically on CPU-only machines or when LIBERO / MuJoCo / robosuite dependencies are unavailable.
+
+The smoke command writes:
+
+- `results/libero_smoke/libero_smoke_status.json`
+- `results/libero_smoke/libero_smoke_summary.csv`
+
+Interpretation:
+
+- `passed`: the requested smoke methods completed and summary/status artifacts were written.
+- `skipped`: the optional robotics stack or checkpoint was unavailable, so the script exited cleanly without claiming robotics performance.
+- `failed`: the dependencies were present and the script attempted the smoke run, but one or more methods did not complete successfully.
 
 ### Optional stronger-compute path
 

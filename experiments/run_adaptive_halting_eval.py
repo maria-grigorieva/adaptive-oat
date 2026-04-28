@@ -15,6 +15,7 @@ import importlib
 import json
 import logging
 import math
+import os
 import random
 import subprocess
 import sys
@@ -34,6 +35,8 @@ NUMERIC_METRIC_SPECS = [
     ("eos_rate", "eos_rate"),
     ("halting_accuracy", "halting_accuracy"),
 ]
+
+LIBERO_DEPENDENCY_MODULES = ("libero", "robosuite", "mujoco")
 
 
 def parse_args() -> argparse.Namespace:
@@ -485,168 +488,255 @@ def run_synthetic_evaluation(args: argparse.Namespace, logger: logging.Logger) -
     return methods_per_run
 
 
-def check_libero_dependencies() -> Tuple[bool, Optional[str]]:
-    required_modules = ["libero", "robosuite", "mujoco"]
+def probe_import(module_name: str) -> Dict[str, object]:
+    try:
+        importlib.import_module(module_name)
+        return {"available": True, "error": None}
+    except Exception as exc:  # pragma: no cover - environment dependent
+        return {"available": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def get_libero_dependency_report() -> Dict[str, Dict[str, object]]:
+    return {
+        module_name: probe_import(module_name)
+        for module_name in LIBERO_DEPENDENCY_MODULES
+    }
+
+
+def get_libero_dependency_flags(report: Dict[str, Dict[str, object]]) -> Dict[str, bool]:
+    return {
+        module_name: bool(details.get("available", False))
+        for module_name, details in report.items()
+    }
+
+
+def summarize_missing_dependencies(report: Dict[str, Dict[str, object]]) -> str:
     missing = []
-    for module_name in required_modules:
-        try:
-            importlib.import_module(module_name)
-        except Exception as exc:  # pragma: no cover - environment dependent
-            missing.append(f"{module_name}: {exc}")
-    if missing:
-        return False, "; ".join(missing)
-    return True, None
+    for module_name, details in report.items():
+        if details.get("available", False):
+            continue
+        missing.append(f"{module_name}: {details.get('error', 'unknown import error')}")
+    return "; ".join(missing)
 
 
-def save_smoke_status(path: Path, status: str, reason: str, extra: Optional[Dict[str, object]] = None) -> None:
-    payload = {"status": status, "reason": reason}
-    if extra:
-        payload.update(extra)
+def save_smoke_status(
+    path: Path,
+    status: str,
+    reason: str,
+    dependency_flags: Dict[str, bool],
+) -> None:
+    payload = {
+        "status": status,
+        "reason": reason,
+        "dependencies": dependency_flags,
+    }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
 
-def try_run_libero_smoke_eval(args: argparse.Namespace, logger: logging.Logger) -> Tuple[Optional[Dict[str, List[Dict[str, object]]]], Path]:
+def build_libero_smoke_methods(args: argparse.Namespace) -> List[Tuple[str, Dict[str, object]]]:
+    keep_ks = sorted(set(args.keep_ks))
+    methods: List[Tuple[str, Dict[str, object]]] = []
+    if args.mode in {"fixed", "all"}:
+        methods.extend((f"fixed_k_{k}", {"use_k_tokens": k}) for k in keep_ks)
+    if args.mode in {"adaptive", "all"}:
+        methods.append(("adaptive_halting", {"adaptive_halting": True}))
+    return methods
+
+
+def build_smoke_metric(
+    method_name: str,
+    keep_ks: Sequence[int],
+    status: str,
+    notes: str,
+    *,
+    avg_prefix_depth: Optional[float] = None,
+    runtime_sec: Optional[float] = None,
+    token_ratio: Optional[float] = None,
+    eos_rate: Optional[float] = None,
+    success_rate: Optional[float] = None,
+    recon_mse: Optional[float] = None,
+    selected_dist: Optional[Dict[str, float]] = None,
+) -> Dict[str, object]:
+    return {
+        "method": method_name,
+        "avg_prefix_depth": avg_prefix_depth if avg_prefix_depth is not None else math.nan,
+        "std_prefix_depth": 0.0 if avg_prefix_depth is not None else math.nan,
+        "recon_mse": recon_mse if recon_mse is not None else math.nan,
+        "runtime_sec": runtime_sec if runtime_sec is not None else math.nan,
+        "token_ratio": token_ratio if token_ratio is not None else math.nan,
+        "eos_rate": eos_rate if eos_rate is not None else math.nan,
+        "halting_accuracy": None,
+        "selected_k_distribution": selected_dist or {str(k): 0.0 for k in keep_ks},
+        "oracle_k_distribution": {},
+        "predicted_k_values": [],
+        "oracle_k_values": [],
+        "success_rate": success_rate if success_rate is not None else math.nan,
+        "status": status,
+        "failure_reason": notes if status != "passed" else "",
+        "notes": notes,
+        "eval_kind": "libero_smoke",
+    }
+
+
+def build_skipped_smoke_metrics(
+    methods: Sequence[Tuple[str, Dict[str, object]]],
+    keep_ks: Sequence[int],
+    reason: str,
+) -> Dict[str, List[Dict[str, object]]]:
+    return {
+        "run_0": [
+            build_smoke_metric(method_name, keep_ks, status="skipped", notes=reason)
+            for method_name, _ in methods
+        ]
+    }
+
+
+def format_subprocess_failure(exc: subprocess.CalledProcessError) -> str:
+    stderr = (exc.stderr or "").strip()
+    stdout = (exc.stdout or "").strip()
+    details = stderr or stdout
+    if details:
+        details = " | ".join(details.splitlines()[-3:])
+        return f"command exited with code {exc.returncode}: {details}"
+    return f"command exited with code {exc.returncode}"
+
+
+def try_run_libero_smoke_eval(args: argparse.Namespace, logger: logging.Logger) -> Tuple[Dict[str, List[Dict[str, object]]], Path]:
     output_dir = Path(args.output_dir)
     status_path = output_dir / "libero_smoke_status.json"
+    keep_ks = sorted(set(args.keep_ks))
+    methods = build_libero_smoke_methods(args)
+    dependency_report = get_libero_dependency_report()
+    dependency_flags = get_libero_dependency_flags(dependency_report)
 
-    available, reason = check_libero_dependencies()
-    if not available:
+    if not all(dependency_flags.values()):
+        reason = summarize_missing_dependencies(dependency_report)
         warning = f"Skipping LIBERO smoke evaluation because required dependencies are unavailable: {reason}"
         logger.warning(warning)
-        save_smoke_status(status_path, status="skipped", reason=warning)
-        return None, status_path
+        save_smoke_status(status_path, status="skipped", reason=warning, dependency_flags=dependency_flags)
+        return build_skipped_smoke_metrics(methods, keep_ks, warning), status_path
 
     if args.policy_checkpoint is None:
         warning = "Skipping LIBERO smoke evaluation because --policy-checkpoint was not provided."
         logger.warning(warning)
-        save_smoke_status(status_path, status="skipped", reason=warning)
-        return None, status_path
+        save_smoke_status(status_path, status="skipped", reason=warning, dependency_flags=dependency_flags)
+        return build_skipped_smoke_metrics(methods, keep_ks, warning), status_path
 
-    keep_ks = sorted(set(args.keep_ks))
-    methods_per_run: Dict[str, List[Dict[str, object]]] = {}
+    methods_per_run: Dict[str, List[Dict[str, object]]] = {"run_0": []}
 
-    for run_idx in range(args.num_runs):
-        run_seed = args.seed + run_idx
-        run_metrics = []
-        methods: List[Tuple[str, Dict[str, object]]] = []
-        if args.mode in {"fixed", "all"}:
-            methods.extend((f"fixed_k_{k}", {"use_k_tokens": k}) for k in keep_ks)
-        if args.mode in {"adaptive", "all"}:
-            methods.append(("adaptive_halting", {"adaptive_halting": True}))
+    for method_name, method_kwargs in methods:
+        method_output = output_dir / "run_0" / method_name
+        command = [
+            sys.executable,
+            "scripts/eval_policy_sim.py",
+            "--checkpoint",
+            str(args.policy_checkpoint),
+            "--output_dir",
+            str(method_output),
+            "--num_exp",
+            "1",
+            "--device",
+            args.device,
+            "--force",
+            "--libero-task-limit",
+            str(args.libero_num_tasks),
+            "--libero-episodes-per-task",
+            str(args.libero_num_episodes),
+            "--libero-n-test-vis",
+            "0",
+            "--libero-n-parallel-envs",
+            "1",
+        ]
+        if "use_k_tokens" in method_kwargs:
+            command.extend(["--use_k_tokens", str(method_kwargs["use_k_tokens"])])
+        if method_kwargs.get("adaptive_halting", False):
+            command.append("--adaptive-halting")
 
-        for method_name, method_kwargs in methods:
-            method_output = output_dir / "libero_smoke" / f"run_{run_idx}" / method_name
-            method_output.mkdir(parents=True, exist_ok=True)
-            command = [
-                sys.executable,
-                "scripts/eval_policy_sim.py",
-                "--checkpoint",
-                str(args.policy_checkpoint),
-                "--output_dir",
-                str(method_output),
-                "--num_exp",
-                "1",
-                "--device",
-                args.device,
-            ]
-            if "use_k_tokens" in method_kwargs:
-                command.extend(["--use_k_tokens", str(method_kwargs["use_k_tokens"])])
-            if method_kwargs.get("adaptive_halting", False):
-                command.append("--adaptive-halting")
-
-            env = dict(**os_environ_headless(args.libero_headless))
-            start = time.perf_counter()
-            try:
-                subprocess.run(
-                    command,
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    env=env,
+        env = os_environ_headless(args.libero_headless, args.device)
+        start = time.perf_counter()
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
+            runtime = time.perf_counter() - start
+            metrics_path = method_output / "eval_log.json"
+            if not metrics_path.is_file():
+                raise RuntimeError(f"Missing expected eval output: {metrics_path}")
+            payload = json.loads(metrics_path.read_text())
+            avg_prefix_depth = payload.get("mean_action_tokens_mean", payload.get("mean_action_tokens"))
+            token_ratio = payload.get("token_ratio_mean", payload.get("token_ratio"))
+            eos_rate = payload.get("eos_prediction_rate_mean", payload.get("eos_prediction_rate", 0.0))
+            success_rate = payload.get("mean_success_rate_mean", payload.get("mean_success_rate"))
+            selected_dist = {
+                str(k): float(payload.get(f"pred_keep_k_{k}_mean", payload.get(f"pred_keep_k_{k}", 0.0)))
+                for k in keep_ks
+            }
+            methods_per_run["run_0"].append(
+                build_smoke_metric(
+                    method_name,
+                    keep_ks,
+                    status="passed",
+                    notes="completed",
+                    avg_prefix_depth=float(avg_prefix_depth) if avg_prefix_depth is not None else None,
+                    runtime_sec=float(runtime),
+                    token_ratio=float(token_ratio) if token_ratio is not None else None,
+                    eos_rate=float(eos_rate) if eos_rate is not None else None,
+                    success_rate=float(success_rate) if success_rate is not None else None,
+                    recon_mse=payload.get("test_reconst_mse_mean", payload.get("test_reconst_mse")),
+                    selected_dist=selected_dist,
                 )
-                runtime = time.perf_counter() - start
-                metrics_path = method_output / "eval_log.json"
-                if not metrics_path.is_file():
-                    raise RuntimeError(f"Missing expected eval output: {metrics_path}")
-                payload = json.loads(metrics_path.read_text())
-                avg_prefix_depth = payload.get("mean_action_tokens_mean", payload.get("mean_action_tokens"))
-                token_ratio = payload.get("token_ratio_mean", payload.get("token_ratio"))
-                eos_rate = payload.get("eos_prediction_rate_mean", payload.get("eos_prediction_rate", 0.0))
-                success_rate = payload.get("mean_success_rate_mean", payload.get("mean_success_rate"))
-                selected_dist = {
-                    str(k): float(payload.get(f"pred_keep_k_{k}_mean", payload.get(f"pred_keep_k_{k}", 0.0)))
-                    for k in keep_ks
-                }
-                run_metrics.append({
-                    "method": method_name,
-                    "avg_prefix_depth": float(avg_prefix_depth) if avg_prefix_depth is not None else math.nan,
-                    "std_prefix_depth": 0.0,
-                    "recon_mse": payload.get("test_reconst_mse_mean", payload.get("test_reconst_mse", math.nan)),
-                    "runtime_sec": float(runtime),
-                    "token_ratio": float(token_ratio) if token_ratio is not None else math.nan,
-                    "eos_rate": float(eos_rate),
-                    "halting_accuracy": None,
-                    "selected_k_distribution": selected_dist,
-                    "oracle_k_distribution": {},
-                    "predicted_k_values": [],
-                    "oracle_k_values": [],
-                    "success_rate": float(success_rate) if success_rate is not None else math.nan,
-                    "status": "ok",
-                    "eval_kind": "libero_smoke",
-                })
-            except Exception as exc:  # pragma: no cover - environment dependent
-                runtime = time.perf_counter() - start
-                failure_reason = f"{type(exc).__name__}: {exc}"
-                logger.warning("LIBERO smoke eval failed for %s run %d: %s", method_name, run_idx, failure_reason)
-                run_metrics.append({
-                    "method": method_name,
-                    "avg_prefix_depth": math.nan,
-                    "std_prefix_depth": math.nan,
-                    "recon_mse": math.nan,
-                    "runtime_sec": float(runtime),
-                    "token_ratio": math.nan,
-                    "eos_rate": math.nan,
-                    "halting_accuracy": None,
-                    "selected_k_distribution": {str(k): 0.0 for k in keep_ks},
-                    "oracle_k_distribution": {},
-                    "predicted_k_values": [],
-                    "oracle_k_values": [],
-                    "success_rate": math.nan,
-                    "status": "failed",
-                    "failure_reason": failure_reason,
-                    "eval_kind": "libero_smoke",
-                })
+            )
+        except subprocess.CalledProcessError as exc:  # pragma: no cover - environment dependent
+            runtime = time.perf_counter() - start
+            failure_reason = format_subprocess_failure(exc)
+            logger.warning("LIBERO smoke eval failed for %s: %s", method_name, failure_reason)
+            methods_per_run["run_0"].append(
+                build_smoke_metric(
+                    method_name,
+                    keep_ks,
+                    status="failed",
+                    notes=failure_reason,
+                    runtime_sec=float(runtime),
+                )
+            )
+        except Exception as exc:  # pragma: no cover - environment dependent
+            runtime = time.perf_counter() - start
+            failure_reason = f"{type(exc).__name__}: {exc}"
+            logger.warning("LIBERO smoke eval failed for %s: %s", method_name, failure_reason)
+            methods_per_run["run_0"].append(
+                build_smoke_metric(
+                    method_name,
+                    keep_ks,
+                    status="failed",
+                    notes=failure_reason,
+                    runtime_sec=float(runtime),
+                )
+            )
 
-        methods_per_run[f"run_{run_idx}"] = run_metrics
-
-    any_success = any(
-        metric.get("status") == "ok"
-        for run_metrics in methods_per_run.values()
-        for metric in run_metrics
+    all_passed = all(metric.get("status") == "passed" for metric in methods_per_run["run_0"])
+    status = "passed" if all_passed else "failed"
+    reason = (
+        "LIBERO smoke evaluation completed for all requested methods."
+        if all_passed
+        else "One or more LIBERO smoke methods failed."
     )
-    status = "ok" if any_success else "failed"
-    reason = "LIBERO smoke evaluation completed." if any_success else "All LIBERO smoke evaluations failed."
-    save_smoke_status(
-        status_path,
-        status=status,
-        reason=reason,
-        extra={
-            "libero_suite": args.libero_suite,
-            "libero_num_tasks": args.libero_num_tasks,
-            "libero_num_episodes": args.libero_num_episodes,
-            "headless": bool(args.libero_headless),
-        },
-    )
+    save_smoke_status(status_path, status=status, reason=reason, dependency_flags=dependency_flags)
     return methods_per_run, status_path
 
 
-def os_environ_headless(headless: bool) -> Dict[str, str]:
-    env = dict(**__import__("os").environ)
+def os_environ_headless(headless: bool, device: str) -> Dict[str, str]:
+    env = dict(os.environ)
     if headless:
-        env.setdefault("MUJOCO_GL", "egl")
-        env.setdefault("PYOPENGL_PLATFORM", "egl")
+        software_backend = "osmesa" if str(device).lower() == "cpu" else "egl"
+        env.setdefault("MUJOCO_GL", software_backend)
+        env.setdefault("PYOPENGL_PLATFORM", software_backend)
+        env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
     return env
 
 
@@ -697,7 +787,9 @@ def aggregate_metrics(
         oracle_values = [value for metric in metrics_list for value in metric.get("oracle_k_values", [])]
         row["predicted_k_values"] = predicted_values
         row["oracle_k_values"] = oracle_values
-        row["num_completed_runs"] = int(sum(metric.get("status", "ok") == "ok" for metric in metrics_list))
+        row["num_completed_runs"] = int(
+            sum(metric.get("status", "ok") in {"ok", "passed"} for metric in metrics_list)
+        )
         aggregated[method] = row
     return aggregated
 
@@ -752,6 +844,7 @@ def write_runs_csv(output_path: Path, methods_per_run: Dict[str, List[Dict[str, 
         "success_rate",
         "status",
         "failure_reason",
+        "notes",
         "selected_k_distribution",
     ]
     with output_path.open("w", newline="") as f:
@@ -772,8 +865,85 @@ def write_runs_csv(output_path: Path, methods_per_run: Dict[str, List[Dict[str, 
                     "success_rate": metric.get("success_rate"),
                     "status": metric.get("status", "ok"),
                     "failure_reason": metric.get("failure_reason", ""),
+                    "notes": metric.get("notes", ""),
                     "selected_k_distribution": json.dumps(metric.get("selected_k_distribution", {}), sort_keys=True),
                 })
+
+
+def write_libero_smoke_summary_csv(
+    output_path: Path,
+    methods_per_run: Dict[str, List[Dict[str, object]]],
+    method_order: Sequence[str],
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_by_method: Dict[str, List[Dict[str, object]]] = {}
+    for run_metrics in methods_per_run.values():
+        for metric in run_metrics:
+            metrics_by_method.setdefault(str(metric.get("method")), []).append(metric)
+
+    fieldnames = [
+        "method",
+        "success_rate",
+        "avg_K",
+        "token_ratio",
+        "runtime_sec",
+        "status",
+        "notes",
+    ]
+    with output_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for method_name in method_order:
+            metrics = metrics_by_method.get(method_name, [])
+            passed_metrics = [metric for metric in metrics if metric.get("status") == "passed"]
+            status = "skipped"
+            notes = "not evaluated"
+            if metrics:
+                if all(metric.get("status") == "passed" for metric in metrics):
+                    status = "passed"
+                    notes = "completed"
+                elif any(metric.get("status") == "failed" for metric in metrics):
+                    status = "failed"
+                    notes = "; ".join(
+                        str(metric.get("notes") or metric.get("failure_reason") or "").strip()
+                        for metric in metrics
+                        if metric.get("status") == "failed"
+                    ) or "one or more runs failed"
+                else:
+                    notes = "; ".join(
+                        str(metric.get("notes") or "").strip()
+                        for metric in metrics
+                        if metric.get("status") == "skipped"
+                    ) or "skipped"
+
+            def mean_metric(key: str) -> Optional[float]:
+                values = []
+                for metric in passed_metrics:
+                    value = metric.get(key)
+                    if value is None:
+                        continue
+                    try:
+                        value_f = float(value)
+                    except Exception:
+                        continue
+                    if math.isnan(value_f):
+                        continue
+                    values.append(value_f)
+                if not values:
+                    return None
+                return float(np.mean(values))
+
+            writer.writerow(
+                {
+                    "method": method_name,
+                    "success_rate": mean_metric("success_rate"),
+                    "avg_K": mean_metric("avg_prefix_depth"),
+                    "token_ratio": mean_metric("token_ratio"),
+                    "runtime_sec": mean_metric("runtime_sec"),
+                    "status": status,
+                    "notes": notes,
+                }
+            )
 
 
 def save_metrics_json(
@@ -888,13 +1058,15 @@ def main() -> None:
 
     if args.libero_smoke_eval:
         smoke_metrics, status_path = try_run_libero_smoke_eval(args, logger)
-        if smoke_metrics is not None:
-            smoke_summary_path = output_dir / "libero_smoke_summary.csv"
-            smoke_runs_path = output_dir / "libero_smoke_runs.csv"
-            smoke_aggregated = aggregate_metrics(smoke_metrics, keep_ks=sorted(set(args.keep_ks)))
-            write_summary_csv(smoke_summary_path, smoke_aggregated)
-            write_runs_csv(smoke_runs_path, smoke_metrics)
-            logger.info("LIBERO smoke summary written to %s", smoke_summary_path.resolve())
+        smoke_summary_path = output_dir / "libero_smoke_summary.csv"
+        smoke_runs_path = output_dir / "libero_smoke_runs.csv"
+        write_libero_smoke_summary_csv(
+            smoke_summary_path,
+            smoke_metrics,
+            method_order=[method_name for method_name, _ in build_libero_smoke_methods(args)],
+        )
+        write_runs_csv(smoke_runs_path, smoke_metrics)
+        logger.info("LIBERO smoke summary written to %s", smoke_summary_path.resolve())
         logger.info("LIBERO smoke status written to %s", status_path.resolve())
 
     logger.info("Artifacts written to %s", output_dir.resolve())

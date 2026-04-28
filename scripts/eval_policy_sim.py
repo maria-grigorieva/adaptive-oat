@@ -19,6 +19,7 @@ sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 
 import os
 import pathlib
+import shutil
 import click
 import hydra
 import torch
@@ -39,6 +40,13 @@ from typing import List, Optional
 @click.option('--topk', default=None, type=int, help="topk for policy inference")
 @click.option('--use_k_tokens', default=None, type=int, help="number of tokens to use for policy inference")
 @click.option('--adaptive-halting/--no-adaptive-halting', default=False, help="enable EOS-based adaptive halting")
+@click.option('--force', is_flag=True, help="overwrite output_dir without prompting")
+@click.option('--libero-task-name', default=None, type=str, help="override LiberoRunner task_name")
+@click.option('--libero-task-limit', default=None, type=int, help="limit the number of LIBERO subtasks")
+@click.option('--libero-episodes-per-task', default=None, type=int, help="episodes to run per selected LIBERO task")
+@click.option('--libero-n-test-vis', default=None, type=int, help="override the number of rendered LIBERO evals")
+@click.option('--libero-n-parallel-envs', default=None, type=int, help="override the number of parallel LIBERO envs")
+@click.option('--libero-max-episode-steps', default=None, type=int, help="override LiberoRunner max_episode_steps")
 def eval_policy_sim(
     checkpoint: str,
     output_dir: str,
@@ -49,10 +57,20 @@ def eval_policy_sim(
     topk: Optional[int] = None,
     use_k_tokens: Optional[int] = None,
     adaptive_halting: bool = False,
+    force: bool = False,
+    libero_task_name: Optional[str] = None,
+    libero_task_limit: Optional[int] = None,
+    libero_episodes_per_task: Optional[int] = None,
+    libero_n_test_vis: Optional[int] = None,
+    libero_n_parallel_envs: Optional[int] = None,
+    libero_max_episode_steps: Optional[int] = None,
 ):
     if os.path.exists(output_dir):
-        click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
-        os.system(f"rm -rf {output_dir}")
+        if force:
+            shutil.rmtree(output_dir)
+        else:
+            click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
+            shutil.rmtree(output_dir)
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     # grab all checkpoints
@@ -78,6 +96,19 @@ def eval_policy_sim(
         
         # load checkpoint
         policy, cfg = BasePolicy.from_checkpoint(ckpt, return_configuration=True)
+        env_runner_cfg = cfg.task.policy.env_runner
+        if libero_task_name is not None:
+            env_runner_cfg.task_name = libero_task_name
+        if libero_task_limit is not None:
+            env_runner_cfg.task_limit = libero_task_limit
+        if libero_episodes_per_task is not None:
+            env_runner_cfg.episodes_per_task = libero_episodes_per_task
+        if libero_n_test_vis is not None:
+            env_runner_cfg.n_test_vis = libero_n_test_vis
+        if libero_n_parallel_envs is not None:
+            env_runner_cfg.n_parallel_envs = libero_n_parallel_envs
+        if libero_max_episode_steps is not None:
+            env_runner_cfg.max_episode_steps = libero_max_episode_steps
         
         device = torch.device(device)
         policy.to(device)

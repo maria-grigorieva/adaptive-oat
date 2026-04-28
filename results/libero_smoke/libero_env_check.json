@@ -1,0 +1,23 @@
+{
+  "all_available": false,
+  "dependencies": {
+    "libero": {
+      "available": false,
+      "error": "ModuleNotFoundError: No module named 'libero'",
+      "module": "libero",
+      "version": null
+    },
+    "mujoco": {
+      "available": false,
+      "error": "ModuleNotFoundError: No module named 'mujoco'",
+      "module": "mujoco",
+      "version": null
+    },
+    "robosuite": {
+      "available": false,
+      "error": "ModuleNotFoundError: No module named 'robosuite'",
+      "module": "robosuite",
+      "version": null
+    }
+  }
+}

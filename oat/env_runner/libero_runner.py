@@ -34,6 +34,8 @@ class LiberoRunner(BaseRunner):
         task_name: str,
         n_test: int,
         n_test_vis: int,
+        task_limit: Optional[int] = None,
+        episodes_per_task: Optional[int] = None,
         test_start_seed: int = 1000,
         n_obs_steps: int = 2,
         n_action_steps: int = 8,
@@ -57,23 +59,37 @@ class LiberoRunner(BaseRunner):
     ):
         super().__init__(output_dir)
 
+        # get subtasks and distribute across envs in batches
+        subtask_names = get_subtasks(task_name)
+        if task_limit is not None:
+            task_limit = int(task_limit)
+            assert task_limit > 0, "task_limit must be positive"
+            subtask_names = subtask_names[:task_limit]
+        assert len(subtask_names) > 0, "No LIBERO subtasks selected for evaluation"
+
+        if episodes_per_task is not None:
+            episodes_per_task = int(episodes_per_task)
+            assert episodes_per_task > 0, "episodes_per_task must be positive"
+            env_task_names = []
+            for subtask_name in subtask_names:
+                env_task_names.extend([subtask_name] * episodes_per_task)
+            n_test = len(env_task_names)
+        else:
+            num_tasks = len(subtask_names)
+            num_repeats = math.ceil(n_test / num_tasks)
+            env_task_names = []
+            for batch_start in range(0, num_tasks, n_parallel_envs or n_test):
+                batch_tasks = subtask_names[batch_start:batch_start + (n_parallel_envs or n_test)]
+                for _ in range(num_repeats):
+                    env_task_names.extend(batch_tasks)
+            env_task_names = env_task_names[:n_test]
+
         if n_parallel_envs is None:
             n_parallel_envs = n_test
         n_parallel_envs = min(n_parallel_envs, n_test)
 
         assert n_parallel_envs > 0, "n_parallel_envs must be positive"
         assert n_test_vis <= n_test, "n_test_vis must be less than or equal to n_test"
-
-        # get subtasks and distribute across envs in batches
-        subtask_names = get_subtasks(task_name)
-        num_tasks = len(subtask_names)
-        num_repeats = math.ceil(n_test / num_tasks)
-        env_task_names = []
-        for batch_start in range(0, num_tasks, n_parallel_envs):
-            batch_tasks = subtask_names[batch_start:batch_start + n_parallel_envs]
-            for _ in range(num_repeats):
-                env_task_names.extend(batch_tasks)
-        env_task_names = env_task_names[:n_test]
 
         # setup env
         env_seeds = []
