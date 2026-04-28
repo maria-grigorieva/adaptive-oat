@@ -8,10 +8,10 @@
       "version": null
     },
     "mujoco": {
-      "available": false,
-      "error": "ModuleNotFoundError: No module named 'mujoco'",
+      "available": true,
+      "error": null,
       "module": "mujoco",
-      "version": null
+      "version": "3.8.0"
     },
     "robosuite": {
       "available": false,

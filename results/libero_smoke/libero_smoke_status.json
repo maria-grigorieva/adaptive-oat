@@ -1,9 +1,9 @@
 {
   "dependencies": {
     "libero": false,
-    "mujoco": false,
+    "mujoco": true,
     "robosuite": false
   },
-  "reason": "Skipping LIBERO smoke evaluation because required dependencies are unavailable: libero: ModuleNotFoundError: No module named 'libero'; robosuite: ModuleNotFoundError: No module named 'robosuite'; mujoco: ModuleNotFoundError: No module named 'mujoco'",
+  "reason": "Skipping LIBERO smoke evaluation because required dependencies are unavailable: libero: ModuleNotFoundError: No module named 'libero'; robosuite: ModuleNotFoundError: No module named 'robosuite'",
   "status": "skipped"
 }

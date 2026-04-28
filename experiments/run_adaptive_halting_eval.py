@@ -373,6 +373,35 @@ def evaluate_random_method(
     }
 
 
+def evaluate_oracle_method(
+    keep_ks: Sequence[int],
+    prefix_errors: np.ndarray,
+    oracle_keep_k: np.ndarray,
+    kmax: int,
+) -> Dict[str, object]:
+    start = time.perf_counter()
+    selected_k = np.asarray(oracle_keep_k, dtype=np.int64)
+    recon_mse = float(prefix_error_for_selected_k(prefix_errors, keep_ks, selected_k).mean())
+    runtime = time.perf_counter() - start
+    oracle_distribution = distribution_from_values(selected_k, keep_ks)
+    return {
+        "method": "oracle_k",
+        "avg_prefix_depth": float(selected_k.mean()),
+        "std_prefix_depth": float(selected_k.std()),
+        "recon_mse": recon_mse,
+        "runtime_sec": runtime,
+        "token_ratio": float(selected_k.mean() / kmax),
+        "eos_rate": float(np.mean(selected_k < kmax)),
+        "halting_accuracy": 1.0,
+        "selected_k_distribution": oracle_distribution,
+        "oracle_k_distribution": oracle_distribution,
+        "predicted_k_values": selected_k.tolist(),
+        "oracle_k_values": selected_k.tolist(),
+        "status": "ok",
+        "eval_kind": "synthetic",
+    }
+
+
 def evaluate_adaptive_method(
     keep_ks: Sequence[int],
     x_train: np.ndarray,
@@ -464,6 +493,14 @@ def run_synthetic_evaluation(args: argparse.Namespace, logger: logging.Logger) -
                         seed=run_seed,
                     )
                 )
+            run_metrics.append(
+                evaluate_oracle_method(
+                    keep_ks=keep_ks,
+                    prefix_errors=prefix_errors_test,
+                    oracle_keep_k=oracle_test,
+                    kmax=kmax,
+                )
+            )
         if args.mode in {"adaptive", "all"}:
             run_metrics.append(
                 evaluate_adaptive_method(

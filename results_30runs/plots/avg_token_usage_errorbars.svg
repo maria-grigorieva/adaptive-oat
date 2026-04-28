@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="560" viewBox="0 0 940 560">
+<rect x="0" y="0" width="940" height="560" fill="#ffffff" />
+<line x1="110" y1="470" x2="900" y2="470" stroke="#222" stroke-width="2" />
+<line x1="110" y1="470" x2="110" y2="50" stroke="#222" stroke-width="2" />
+<line x1="110" y1="470.00" x2="900" y2="470.00" stroke="#e6e6e6" />
+<text x="98" y="474.00" font-size="14" text-anchor="end" fill="#222">0.0000</text>
+<line x1="110" y1="365.00" x2="900" y2="365.00" stroke="#e6e6e6" />
+<text x="98" y="369.00" font-size="14" text-anchor="end" fill="#222">2.0000</text>
+<line x1="110" y1="260.00" x2="900" y2="260.00" stroke="#e6e6e6" />
+<text x="98" y="264.00" font-size="14" text-anchor="end" fill="#222">4.0000</text>
+<line x1="110" y1="155.00" x2="900" y2="155.00" stroke="#e6e6e6" />
+<text x="98" y="159.00" font-size="14" text-anchor="end" fill="#222">6.0000</text>
+<line x1="110" y1="50.00" x2="900" y2="50.00" stroke="#e6e6e6" />
+<text x="98" y="54.00" font-size="14" text-anchor="end" fill="#222">8.0000</text>
+<rect x="135.39" y="171.83" width="62.07" height="298.17" fill="#d62728" opacity="0.84" />
+<line x1="166.43" y1="163.18" x2="166.43" y2="180.48" stroke="#111" stroke-width="2" />
+<line x1="158.43" y1="163.18" x2="174.43" y2="163.18" stroke="#111" stroke-width="2" />
+<line x1="158.43" y1="180.48" x2="174.43" y2="180.48" stroke="#111" stroke-width="2" />
+<text x="166.43" y="492" font-size="13" text-anchor="end" transform="rotate(-35 166.43 492)" fill="#222">adaptive_halting</text>
+<text x="166.43" y="163.83" font-size="13" text-anchor="middle" fill="#222">5.6794</text>
+<rect x="248.25" y="417.50" width="62.07" height="52.50" fill="#1f77b4" opacity="0.84" />
+<line x1="279.29" y1="417.50" x2="279.29" y2="417.50" stroke="#111" stroke-width="2" />
+<line x1="271.29" y1="417.50" x2="287.29" y2="417.50" stroke="#111" stroke-width="2" />
+<line x1="271.29" y1="417.50" x2="287.29" y2="417.50" stroke="#111" stroke-width="2" />
+<text x="279.29" y="492" font-size="13" text-anchor="end" transform="rotate(-35 279.29 492)" fill="#222">fixed_k_1</text>
+<text x="279.29" y="409.50" font-size="13" text-anchor="middle" fill="#222">1.0000</text>
+<rect x="361.11" y="365.00" width="62.07" height="105.00" fill="#1f77b4" opacity="0.84" />
+<line x1="392.14" y1="365.00" x2="392.14" y2="365.00" stroke="#111" stroke-width="2" />
+<line x1="384.14" y1="365.00" x2="400.14" y2="365.00" stroke="#111" stroke-width="2" />
+<line x1="384.14" y1="365.00" x2="400.14" y2="365.00" stroke="#111" stroke-width="2" />
+<text x="392.14" y="492" font-size="13" text-anchor="end" transform="rotate(-35 392.14 492)" fill="#222">fixed_k_2</text>
+<text x="392.14" y="357.00" font-size="13" text-anchor="middle" fill="#222">2.0000</text>
+<rect x="473.96" y="260.00" width="62.07" height="210.00" fill="#1f77b4" opacity="0.84" />
+<line x1="505.00" y1="260.00" x2="505.00" y2="260.00" stroke="#111" stroke-width="2" />
+<line x1="497.00" y1="260.00" x2="513.00" y2="260.00" stroke="#111" stroke-width="2" />
+<line x1="497.00" y1="260.00" x2="513.00" y2="260.00" stroke="#111" stroke-width="2" />
+<text x="505.00" y="492" font-size="13" text-anchor="end" transform="rotate(-35 505.00 492)" fill="#222">fixed_k_4</text>
+<text x="505.00" y="252.00" font-size="13" text-anchor="middle" fill="#222">4.0000</text>
+<rect x="586.82" y="50.00" width="62.07" height="420.00" fill="#1f77b4" opacity="0.84" />
+<line x1="617.86" y1="50.00" x2="617.86" y2="50.00" stroke="#111" stroke-width="2" />
+<line x1="609.86" y1="50.00" x2="625.86" y2="50.00" stroke="#111" stroke-width="2" />
+<line x1="609.86" y1="50.00" x2="625.86" y2="50.00" stroke="#111" stroke-width="2" />
+<text x="617.86" y="492" font-size="13" text-anchor="end" transform="rotate(-35 617.86 492)" fill="#222">fixed_k_8</text>
+<text x="617.86" y="42.00" font-size="13" text-anchor="middle" fill="#222">8.0000</text>
+<rect x="699.68" y="175.71" width="62.07" height="294.29" fill="#1f77b4" opacity="0.84" />
+<line x1="730.71" y1="166.79" x2="730.71" y2="184.63" stroke="#111" stroke-width="2" />
+<line x1="722.71" y1="166.79" x2="738.71" y2="166.79" stroke="#111" stroke-width="2" />
+<line x1="722.71" y1="184.63" x2="738.71" y2="184.63" stroke="#111" stroke-width="2" />
+<text x="730.71" y="492" font-size="13" text-anchor="end" transform="rotate(-35 730.71 492)" fill="#222">oracle_k</text>
+<text x="730.71" y="167.71" font-size="13" text-anchor="middle" fill="#222">5.6055</text>
+<rect x="812.54" y="270.07" width="62.07" height="199.93" fill="#1f77b4" opacity="0.84" />
+<line x1="843.57" y1="260.86" x2="843.57" y2="279.29" stroke="#111" stroke-width="2" />
+<line x1="835.57" y1="260.86" x2="851.57" y2="260.86" stroke="#111" stroke-width="2" />
+<line x1="835.57" y1="279.29" x2="851.57" y2="279.29" stroke="#111" stroke-width="2" />
+<text x="843.57" y="492" font-size="13" text-anchor="end" transform="rotate(-35 843.57 492)" fill="#222">random_k</text>
+<text x="843.57" y="262.07" font-size="13" text-anchor="middle" fill="#222">3.8081</text>
+<text x="470.00" y="30" font-size="22" text-anchor="middle" fill="#111">Average Token Usage (mean ± std)</text>
+<text x="28" y="260.00" font-size="16" text-anchor="middle" fill="#222" transform="rotate(-90 28 260.00)">Average prefix depth K</text>
+</svg>
