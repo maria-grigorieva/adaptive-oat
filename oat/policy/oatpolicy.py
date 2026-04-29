@@ -284,10 +284,14 @@ class OATPolicy(BasePolicy):
         temperature: float,
         topk: Optional[int],
         adaptive_min_k: int,
+        entropy_threshold: Optional[float] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         B = features.shape[0]
         device = features.device
         adaptive_min_k = max(1, min(int(adaptive_min_k), max_action_tokens))
+        if entropy_threshold is None:
+            entropy_threshold = self.entropy_threshold
+        entropy_threshold = float(entropy_threshold)
 
         generated_action_tokens = torch.zeros(
             (B, max_action_tokens),
@@ -334,7 +338,7 @@ class OATPolicy(BasePolicy):
             last_entropy = entropy
 
             can_stop = (~finished) & (step >= adaptive_min_k)
-            entropy_stop = can_stop & (entropy < self.entropy_threshold)
+            entropy_stop = can_stop & (entropy < entropy_threshold)
             if entropy_stop.any():
                 finished[entropy_stop] = True
                 token_lens[entropy_stop] = step
@@ -510,6 +514,7 @@ class OATPolicy(BasePolicy):
         topk: Optional[int] = None,
         adaptive_halting: Optional[bool] = None,
         adaptive_min_k: int = 1,
+        entropy_threshold: Optional[float] = None,
     ) -> Dict[str, torch.Tensor]:
         if use_k_tokens is None:
             use_k_tokens = self.max_seq_len
@@ -537,6 +542,7 @@ class OATPolicy(BasePolicy):
                     temperature=temperature,
                     topk=topk,
                     adaptive_min_k=adaptive_min_k,
+                    entropy_threshold=entropy_threshold,
                 )
             )
         else:
@@ -590,6 +596,11 @@ class OATPolicy(BasePolicy):
             'entropy_at_stop': entropy_at_stop,
             'stop_reasons': stop_reasons,
             'adaptive_min_k': torch.tensor(int(adaptive_min_k), device=token_lens.device),
+            'entropy_threshold': torch.tensor(
+                float(self.entropy_threshold if entropy_threshold is None else entropy_threshold),
+                dtype=features.dtype,
+                device=token_lens.device,
+            ),
         }
         return result
 

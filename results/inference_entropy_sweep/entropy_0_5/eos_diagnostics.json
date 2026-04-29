@@ -1,0 +1,29 @@
+{
+  "adaptive_halting_requested": true,
+  "adaptive_min_k": 1,
+  "checkpoint": "/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260429/115809_train_oatpolicy_tinyplus_entropy_train6_5_infer0_1_libero_spatial_tinyplus/checkpoints/latest.ckpt",
+  "early_stop_rate": 0.17307692307692307,
+  "entropy_threshold_override": 0.5,
+  "eos_prediction_rate": 0.17307692307692307,
+  "eos_token_id": 1001,
+  "max_action_tokens": 8,
+  "mean_action_tokens": 7.115384615384615,
+  "mean_eos_probability": null,
+  "notes": "EOS probability diagnostics are unavailable in the current autoregressive generate() API; length and EOS-rate diagnostics are logged instead.",
+  "num_action_sequences": 52,
+  "num_sequences_reaching_max_k": 43,
+  "num_sequences_stopping_early": 9,
+  "policy_use_adaptive_halting": true,
+  "selected_k_distribution": {
+    "0": 0.0,
+    "1": 0.038461538461538464,
+    "2": 0.019230769230769232,
+    "3": 0.07692307692307693,
+    "4": 0.0,
+    "5": 0.038461538461538464,
+    "6": 0.0,
+    "7": 0.0,
+    "8": 0.8269230769230769
+  },
+  "token_ratio": 0.8894230769230769
+}

@@ -46,3 +46,33 @@ wandb:
 wandb: You can sync this run to the cloud by running:
 wandb: wandb sync /Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260429/114333_train_oatpolicy_tinyplus_entropy_0_5_libero_spatial_tinyplus/wandb/offline-run-20260429_114344-phq299i2
 wandb: Find logs at: ./output/20260429/114333_train_oatpolicy_tinyplus_entropy_0_5_libero_spatial_tinyplus/wandb/offline-run-20260429_114344-phq299i2/logs
+[transformers] Disabling PyTorch because PyTorch >= 2.4 is required but found 2.2.2
+[transformers] PyTorch was not found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+/Users/maria/MIPT/AOPT_assignment/adaptive-oat/.venv/lib/python3.10/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/Users/maria/MIPT/AOPT_assignment/adaptive-oat/.venv/lib/python3.10/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.
+  warnings.warn(msg)
+oatpolicy_rgb initialized with
+  obs enc: 22.4M (100.00000% trainable)
+  act tok: 0.7M (0.00000% trainable)
+  policy : 0.8M (100.00000% trainable)
+
+Running evaluation on output/20260429/114333_train_oatpolicy_tinyplus_entropy_0_5_libero_spatial_tinyplus/checkpoints/latest.ckpt
+[robosuite WARNING] No private macro file found! (__init__.py:7)
+[robosuite WARNING] It is recommended to use a private macro file (__init__.py:8)
+[robosuite WARNING] To setup, run: python /Users/maria/MIPT/AOPT_assignment/adaptive-oat/.venv/lib/python3.10/site-packages/robosuite/scripts/setup_macros.py (__init__.py:9)
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+[info] using task orders [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+[robosuite WARNING] No private macro file found! (__init__.py:7)
+[robosuite WARNING] It is recommended to use a private macro file (__init__.py:8)
+[robosuite WARNING] To setup, run: python /Users/maria/MIPT/AOPT_assignment/adaptive-oat/.venv/lib/python3.10/site-packages/robosuite/scripts/setup_macros.py (__init__.py:9)
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+[info] using task orders [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Eval oatpolicy_rgb in Libero::libero_spatial_tiny 1/4:   0%|          | 0/200 [00:00<?, ?it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 1/4:  24%|██▍       | 48/200 [00:06<00:20,  7.47it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 1/4:  56%|█████▌    | 112/200 [00:12<00:09,  9.53it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 1/4:  88%|████████▊ | 176/200 [00:19<00:02,  9.10it/s]                                                                                                        Eval oatpolicy_rgb in Libero::libero_spatial_tiny 2/4:   0%|          | 0/200 [00:00<?, ?it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 2/4:   8%|▊         | 16/200 [00:08<01:37,  1.90it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 2/4:  32%|███▏      | 64/200 [00:14<00:28,  4.85it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 2/4:  56%|█████▌    | 112/200 [00:21<00:14,  5.97it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 2/4:  80%|████████  | 160/200 [00:27<00:05,  6.74it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 2/4: 208it [00:32,  7.51it/s]                                                                                                        [info] using task orders [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Eval oatpolicy_rgb in Libero::libero_spatial_tiny 3/4:   0%|          | 0/200 [00:00<?, ?it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 3/4:  24%|██▍       | 48/200 [00:06<00:21,  7.08it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 3/4:  48%|████▊     | 96/200 [00:12<00:12,  8.08it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 3/4:  72%|███████▏  | 144/200 [00:19<00:07,  7.24it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 3/4:  96%|█████████▌| 192/200 [00:26<00:01,  7.09it/s]                                                                                                        Eval oatpolicy_rgb in Libero::libero_spatial_tiny 4/4:   0%|          | 0/200 [00:00<?, ?it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 4/4:  16%|█▌        | 32/200 [00:06<00:33,  5.03it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 4/4:  40%|████      | 80/200 [00:11<00:16,  7.18it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 4/4:  64%|██████▍   | 128/200 [00:16<00:08,  8.15it/s]Eval oatpolicy_rgb in Libero::libero_spatial_tiny 4/4:  88%|████████▊ | 176/200 [00:23<00:03,  7.95it/s]                                                                                                        Exp 1: success rate = 0.0

@@ -41,6 +41,16 @@ from typing import List, Optional
 @click.option('--use_k_tokens', default=None, type=int, help="number of tokens to use for policy inference")
 @click.option('--adaptive-halting/--no-adaptive-halting', default=False, help="enable EOS-based adaptive halting")
 @click.option('--adaptive-min-k', default=1, type=int, help="ignore adaptive EOS before this prefix depth")
+@click.option(
+    '--entropy-threshold',
+    default=None,
+    type=float,
+    help=(
+        "override adaptive halting entropy threshold at inference time. "
+        "Default: None (uses model config). For models trained with "
+        "train_entropy_threshold=6.5, sweep between 0.5 and 2.0 for effective early stopping."
+    ),
+)
 @click.option('--force', is_flag=True, help="overwrite output_dir without prompting")
 @click.option('--libero-task-name', default=None, type=str, help="override LiberoRunner task_name")
 @click.option('--libero-task-limit', default=None, type=int, help="limit the number of LIBERO subtasks")
@@ -59,6 +69,7 @@ def eval_policy_sim(
     use_k_tokens: Optional[int] = None,
     adaptive_halting: bool = False,
     adaptive_min_k: int = 1,
+    entropy_threshold: Optional[float] = None,
     force: bool = False,
     libero_task_name: Optional[str] = None,
     libero_task_limit: Optional[int] = None,
@@ -133,6 +144,8 @@ def eval_policy_sim(
         if adaptive_halting:
             kwargs['adaptive_halting'] = True
             kwargs['adaptive_min_k'] = adaptive_min_k
+            if entropy_threshold is not None:
+                kwargs['entropy_threshold'] = entropy_threshold
         run_start_time = time.perf_counter()
         runner_log = env_runner.run(
             policy,
@@ -183,6 +196,8 @@ def eval_policy_sim(
         json_log['libero_episodes_per_task'] = int(getattr(env_runner_cfg, 'episodes_per_task', 0) or 0)
         json_log['libero_n_test'] = int(getattr(env_runner_cfg, 'n_test', 0) or 0)
         json_log['adaptive_min_k'] = int(adaptive_min_k)
+        if entropy_threshold is not None:
+            json_log['entropy_threshold_override'] = float(entropy_threshold)
         
         # Add mean values
         for key, value in mean_log.items():
@@ -217,6 +232,9 @@ def eval_policy_sim(
                 'eos_token_id': policy.eos_id,
                 'max_action_tokens': policy.max_seq_len,
                 'adaptive_min_k': int(adaptive_min_k),
+                'entropy_threshold_override': (
+                    None if entropy_threshold is None else float(entropy_threshold)
+                ),
                 'mean_action_tokens': float(json_log.get('mean_action_tokens_mean', 0.0)),
                 'token_ratio': float(json_log.get('token_ratio_mean', 0.0)),
                 'eos_prediction_rate': float(json_log.get('eos_prediction_rate_mean', 0.0)),

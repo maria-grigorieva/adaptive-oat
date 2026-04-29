@@ -1,0 +1,38 @@
+[
+  {
+    "avg_token_length": 7.115384615384615,
+    "checkpoint": "/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260429/115809_train_oatpolicy_tinyplus_entropy_train6_5_infer0_1_libero_spatial_tinyplus/checkpoints/latest.ckpt",
+    "early_stop_rate": 0.17307692307692307,
+    "entropy_threshold": 0.5,
+    "eos_rate": 0.17307692307692307,
+    "eval_dir": "results/inference_entropy_sweep/entropy_0_5",
+    "runtime_sec": 109.15220066800248,
+    "selected_k_distribution": "{\"0\": 0.0, \"1\": 0.038461538461538464, \"2\": 0.019230769230769232, \"3\": 0.07692307692307693, \"4\": 0.0, \"5\": 0.038461538461538464, \"6\": 0.0, \"7\": 0.0, \"8\": 0.8269230769230769}",
+    "success_rate": 0.0,
+    "token_ratio": 0.8894230769230769
+  },
+  {
+    "avg_token_length": 1.1538461538461537,
+    "checkpoint": "/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260429/115809_train_oatpolicy_tinyplus_entropy_train6_5_infer0_1_libero_spatial_tinyplus/checkpoints/latest.ckpt",
+    "early_stop_rate": 1.0,
+    "entropy_threshold": 1.0,
+    "eos_rate": 0.0,
+    "eval_dir": "results/inference_entropy_sweep/entropy_1_0",
+    "runtime_sec": 115.66293678001966,
+    "selected_k_distribution": "{\"0\": 0.0, \"1\": 0.8461538461538461, \"2\": 0.15384615384615385, \"3\": 0.0, \"4\": 0.0, \"5\": 0.0, \"6\": 0.0, \"7\": 0.0, \"8\": 0.0}",
+    "success_rate": 0.0,
+    "token_ratio": 0.14423076923076922
+  },
+  {
+    "avg_token_length": 1.0,
+    "checkpoint": "/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260429/115809_train_oatpolicy_tinyplus_entropy_train6_5_infer0_1_libero_spatial_tinyplus/checkpoints/latest.ckpt",
+    "early_stop_rate": 1.0,
+    "entropy_threshold": 2.0,
+    "eos_rate": 0.0,
+    "eval_dir": "results/inference_entropy_sweep/entropy_2_0",
+    "runtime_sec": 135.99347976304125,
+    "selected_k_distribution": "{\"0\": 0.0, \"1\": 1.0, \"2\": 0.0, \"3\": 0.0, \"4\": 0.0, \"5\": 0.0, \"6\": 0.0, \"7\": 0.0, \"8\": 0.0}",
+    "success_rate": 0.0,
+    "token_ratio": 0.125
+  }
+]

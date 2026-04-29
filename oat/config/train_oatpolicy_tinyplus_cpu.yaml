@@ -43,6 +43,13 @@ policy:
   temperature: 1.0
   topk: 10
   use_adaptive_halting: false
+  adaptive_halting:
+    type: entropy
+    entropy_threshold: 0.1
+    # Threshold 6.5 is calibrated to produce a non-degenerate oracle (avg K ~ 6.9)
+    # on LIBERO. Lower thresholds result in full-length (K=8) oracles.
+    train_entropy_threshold: 6.5
+    use_dynamic_threshold: false
   halt_tolerance: 1.0e-3
   halt_keep_ks: [1, 2, 4, 8]
 
@@ -50,11 +57,11 @@ training:
   resume: false
   allow_bf16: false
   max_grad_norm: 1.0
-  num_epochs: 5
-  val_every: 1
-  sample_every: 1
+  num_epochs: 50
+  val_every: 5
+  sample_every: 5
   rollout_every: 1000000
-  checkpoint_every: 1
+  checkpoint_every: 5
   lr_scheduler: constant
   lr_warmup_steps: 0
   gradient_accumulate_every: 1
