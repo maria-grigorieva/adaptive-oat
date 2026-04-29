@@ -11,6 +11,9 @@ from oat.model.autoregressive.transformer_cache import AutoregressiveModel
 
 class OATPolicy(BasePolicy):
     loss_ignore_index = -100
+    stop_reason_eos = 0
+    stop_reason_entropy = 1
+    stop_reason_max_k = 2
 
     def __init__(
         self,
@@ -28,6 +31,7 @@ class OATPolicy(BasePolicy):
         temperature: float = 1.0,
         topk: int = 10,
         use_adaptive_halting: bool = False,
+        entropy_threshold: float = 0.5,
         halt_tolerance: float = 1e-3,
         halt_keep_ks: Optional[List[int]] = None,
     ):
@@ -88,6 +92,7 @@ class OATPolicy(BasePolicy):
         self.bos_id = bos_id
         self.eos_id = eos_id
         self.use_adaptive_halting = use_adaptive_halting
+        self.entropy_threshold = float(entropy_threshold)
         self.halt_tolerance = halt_tolerance
         self.halt_keep_ks = list(halt_keep_ks)
         self.n_action_steps = n_action_steps
@@ -226,6 +231,130 @@ class OATPolicy(BasePolicy):
         decode_tokens[action_token_positions >= token_lens.unsqueeze(1)] = 0
         return decode_tokens, token_lens, eos_generated
 
+    def _compute_sampling_distribution(
+        self,
+        logits: torch.Tensor,
+        temperature: float,
+        topk: Optional[int],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        sampling_logits = logits.clone()
+        if temperature > 0:
+            sampling_logits = sampling_logits / temperature
+
+        if topk is not None:
+            v, _ = torch.topk(sampling_logits, min(topk, sampling_logits.size(-1)))
+            sampling_logits[sampling_logits < v[:, [-1]]] = -float("inf")
+
+        probs = F.softmax(sampling_logits, dim=-1)
+        entropy = -(probs * probs.clamp_min(1e-12).log()).sum(dim=-1)
+        return probs, entropy
+
+    def _sample_tokens_from_distribution(
+        self,
+        probs: torch.Tensor,
+        temperature: float,
+    ) -> torch.Tensor:
+        if temperature > 0:
+            return torch.multinomial(probs, num_samples=1)
+        return torch.argmax(probs, dim=-1, keepdim=True)
+
+    def _generate_action_tokens_with_entropy_halting(
+        self,
+        features: torch.Tensor,
+        max_action_tokens: int,
+        temperature: float,
+        topk: Optional[int],
+        adaptive_min_k: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        B = features.shape[0]
+        device = features.device
+        adaptive_min_k = max(1, min(int(adaptive_min_k), max_action_tokens))
+
+        generated_action_tokens = torch.zeros(
+            (B, max_action_tokens),
+            dtype=torch.long,
+            device=device,
+        )
+        token_lens = torch.full(
+            (B,),
+            max_action_tokens,
+            dtype=torch.long,
+            device=device,
+        )
+        eos_generated = torch.zeros(B, dtype=torch.bool, device=device)
+        stop_reasons = torch.full(
+            (B,),
+            self.stop_reason_max_k,
+            dtype=torch.long,
+            device=device,
+        )
+        entropy_at_stop = torch.full(
+            (B,),
+            float("nan"),
+            dtype=features.dtype,
+            device=device,
+        )
+        last_entropy = torch.zeros(B, dtype=features.dtype, device=device)
+        finished = torch.zeros(B, dtype=torch.bool, device=device)
+
+        bos_tokens = torch.full((B, 1), self.bos_id, dtype=torch.long, device=device)
+
+        for step in range(max_action_tokens):
+            prefix_tokens = torch.cat([bos_tokens, generated_action_tokens[:, :step]], dim=1)
+            logits = self.model(prefix_tokens, cond=features)[:, -1, :]
+
+            sampling_logits = logits.clone()
+            if self.eos_id is not None and step < adaptive_min_k:
+                sampling_logits[:, self.eos_id] = -float("inf")
+
+            probs, entropy = self._compute_sampling_distribution(
+                sampling_logits,
+                temperature=temperature,
+                topk=topk,
+            )
+            last_entropy = entropy
+
+            can_stop = (~finished) & (step >= adaptive_min_k)
+            entropy_stop = can_stop & (entropy < self.entropy_threshold)
+            if entropy_stop.any():
+                finished[entropy_stop] = True
+                token_lens[entropy_stop] = step
+                stop_reasons[entropy_stop] = self.stop_reason_entropy
+                entropy_at_stop[entropy_stop] = entropy[entropy_stop]
+
+            active = ~finished
+            if not active.any():
+                break
+
+            next_tokens = self._sample_tokens_from_distribution(
+                probs=probs,
+                temperature=temperature,
+            )
+            next_token_ids = next_tokens.squeeze(-1)
+
+            eos_stop = active & (step >= adaptive_min_k) & (next_token_ids == self.eos_id)
+            if eos_stop.any():
+                finished[eos_stop] = True
+                eos_generated[eos_stop] = True
+                token_lens[eos_stop] = step
+                stop_reasons[eos_stop] = self.stop_reason_eos
+                entropy_at_stop[eos_stop] = entropy[eos_stop]
+
+            append_mask = active & ~eos_stop
+            if append_mask.any():
+                generated_action_tokens[append_mask, step] = next_token_ids[append_mask]
+
+            if finished.all():
+                break
+
+        max_k_mask = ~finished
+        if max_k_mask.any():
+            token_lens[max_k_mask] = max_action_tokens
+            stop_reasons[max_k_mask] = self.stop_reason_max_k
+            entropy_at_stop[max_k_mask] = last_entropy[max_k_mask]
+
+        return generated_action_tokens, token_lens, eos_generated, entropy_at_stop, stop_reasons
+
     def _oracle_keep_k_from_batch(self, batch) -> torch.Tensor:
         oracle_keep_k, _ = self.action_tokenizer.compute_oracle_keep_k_from_samples(
             samples=batch['action'],
@@ -301,24 +430,47 @@ class OATPolicy(BasePolicy):
         B = features.shape[0]
 
         # autoregressive generation
-        action_tokens = torch.full( # [B, 1] seq: [<BOS>,]
-            (B, 1), self.bos_id, 
-            dtype=torch.long, device=self.device
-        )
-        generated_tokens = self.model.generate(
-            action_tokens,
-            cond=features,
-            max_new_tokens=use_k_tokens + 1 if adaptive_halting else use_k_tokens,
-            temperature=temperature,
-            top_k=topk,
-            eos_id=self.eos_id if adaptive_halting and adaptive_min_k <= 1 else None,
-        )[:, 1:]    # drop <BOS>
+        if adaptive_halting:
+            decode_tokens, token_lens, eos_generated, entropy_at_stop, stop_reasons = (
+                self._generate_action_tokens_with_entropy_halting(
+                    features=features,
+                    max_action_tokens=use_k_tokens,
+                    temperature=temperature,
+                    topk=topk,
+                    adaptive_min_k=adaptive_min_k,
+                )
+            )
+        else:
+            action_tokens = torch.full( # [B, 1] seq: [<BOS>,]
+                (B, 1), self.bos_id, 
+                dtype=torch.long, device=self.device
+            )
+            generated_tokens = self.model.generate(
+                action_tokens,
+                cond=features,
+                max_new_tokens=use_k_tokens,
+                temperature=temperature,
+                top_k=topk,
+                eos_id=None,
+            )[:, 1:]    # drop <BOS>
 
-        decode_tokens, token_lens, eos_generated = self.extract_action_prefix(
-            generated_tokens=generated_tokens,
-            max_action_tokens=use_k_tokens,
-            adaptive_min_k=adaptive_min_k,
-        )
+            decode_tokens, token_lens, eos_generated = self.extract_action_prefix(
+                generated_tokens=generated_tokens,
+                max_action_tokens=use_k_tokens,
+                adaptive_min_k=adaptive_min_k,
+            )
+            entropy_at_stop = torch.full(
+                (B,),
+                float("nan"),
+                dtype=features.dtype,
+                device=features.device,
+            )
+            stop_reasons = torch.full(
+                (B,),
+                self.stop_reason_max_k,
+                dtype=torch.long,
+                device=features.device,
+            )
 
         # decode action tokens
         with torch.inference_mode():
@@ -336,6 +488,8 @@ class OATPolicy(BasePolicy):
             'action_tokens': decode_tokens,
             'token_lens': token_lens,
             'eos_generated': eos_generated,
+            'entropy_at_stop': entropy_at_stop,
+            'stop_reasons': stop_reasons,
             'adaptive_min_k': torch.tensor(int(adaptive_min_k), device=token_lens.device),
         }
         return result
