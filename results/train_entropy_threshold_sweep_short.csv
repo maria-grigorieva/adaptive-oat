@@ -1,0 +1,6 @@
+run,train_entropy_threshold,epoch0_train_mean_keep_k,epoch0_train_mean_entropy_at_stop,epoch0_train_stop_reason_entropy_low,epoch0_val_mean_keep_k,epoch0_pred_mean_keep_k,final_train_mean_keep_k,final_train_mean_entropy_at_stop,final_train_stop_reason_entropy_low,final_train_stop_reason_max_k,final_val_mean_keep_k,final_pred_mean_keep_k,final_pred_eos_rate,final_test_reconst_mse
+th2_mink4,2.0,8.0,6.794857025146484,0.0,8.0,8.0,8.0,6.604591369628906,0.0,1.0,,,,
+th4_mink4,4.0,8.0,6.794857025146484,0.0,8.0,8.0,8.0,6.604591369628906,0.0,1.0,,,,
+th5_mink4,5.0,8.0,6.794857025146484,0.0,8.0,8.0,8.0,6.604591369628906,0.0,1.0,,,,
+th6_mink4,6.0,8.0,6.794857025146484,0.0,8.0,8.0,8.0,6.604591369628906,0.0,1.0,,,,
+th6_5_mink4,6.5,8.0,6.794857025146484,0.0,8.0,8.0,8.0,6.604591369628906,0.0,1.0,,,,

@@ -46,9 +46,13 @@ policy:
   adaptive_halting:
     type: entropy
     entropy_threshold: 0.1
-    # Threshold 6.5 is calibrated to produce a non-degenerate oracle (avg K ~ 6.9)
-    # on LIBERO. Lower thresholds result in full-length (K=8) oracles.
-    train_entropy_threshold: 6.5
+    train_entropy_threshold: 2.0
+    # Lowered from 6.5 to 2.0. 6.5 caused K=1 mode collapse (stopped immediately
+    # on certainty). 2.0 forces learning of longer prefixes for precision tasks.
+    min_train_keep_k: 4
+    # Require at least a 4-token prefix before the entropy oracle can emit STOP.
+    # This keeps adaptive training from collapsing before the policy has learned
+    # the higher-order tokens needed for precise LIBERO actions.
     use_dynamic_threshold: false
   halt_tolerance: 1.0e-3
   halt_keep_ks: [1, 2, 4, 8]

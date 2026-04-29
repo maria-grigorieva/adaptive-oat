@@ -1,0 +1,4 @@
+method,success_rate,avg_token_length,token_ratio,eos_prediction_rate,early_stop_rate,runtime_sec,pred_keep_k_4_mean,pred_keep_k_8_mean
+fixed_short6x5,0.0,8.0,1.0,0.0,0.0,517.4418600701028,0.0,1.0
+adaptive_mink4_short6x5,0.0,6.1923076923076925,0.7740384615384616,0.6153846153846154,0.6153846153846154,414.08854542998597,0.34615384615384615,0.38461538461538464
+adaptive_mink4_longrun,0.0,4.0,0.5,1.0,1.0,108.29284925700631,1.0,0.0

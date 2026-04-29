@@ -14,6 +14,7 @@ class OATPolicy(BasePolicy):
     stop_reason_eos = 0
     stop_reason_entropy = 1
     stop_reason_max_k = 2
+    stop_reason_eos_probability = 3
 
     def __init__(
         self,
@@ -33,6 +34,7 @@ class OATPolicy(BasePolicy):
         use_adaptive_halting: bool = False,
         adaptive_halting: Optional[Dict] = None,
         entropy_threshold: float = 0.5,
+        eos_probability_threshold: Optional[float] = 0.02,
         halt_tolerance: float = 1e-3,
         halt_keep_ks: Optional[List[int]] = None,
     ):
@@ -95,6 +97,10 @@ class OATPolicy(BasePolicy):
         self.use_adaptive_halting = use_adaptive_halting
         self.entropy_threshold = float(entropy_threshold)
         self.train_entropy_threshold = float(entropy_threshold)
+        self.eos_probability_threshold = (
+            None if eos_probability_threshold is None else float(eos_probability_threshold)
+        )
+        self.min_train_keep_k = 1
         self.adaptive_halting_type = "mse"
         self.use_dynamic_threshold = False
         if adaptive_halting is not None:
@@ -105,6 +111,16 @@ class OATPolicy(BasePolicy):
             self.train_entropy_threshold = float(
                 adaptive_halting.get("train_entropy_threshold", self.entropy_threshold)
             )
+            adaptive_eos_probability_threshold = adaptive_halting.get(
+                "eos_probability_threshold",
+                self.eos_probability_threshold,
+            )
+            self.eos_probability_threshold = (
+                None
+                if adaptive_eos_probability_threshold is None
+                else float(adaptive_eos_probability_threshold)
+            )
+            self.min_train_keep_k = int(adaptive_halting.get("min_train_keep_k", self.min_train_keep_k))
             self.use_dynamic_threshold = bool(
                 adaptive_halting.get("use_dynamic_threshold", False)
             )
@@ -112,6 +128,8 @@ class OATPolicy(BasePolicy):
             raise ValueError(
                 f"adaptive_halting.type must be 'mse' or 'entropy', got {self.adaptive_halting_type}"
             )
+        if self.min_train_keep_k < 1:
+            raise ValueError(f"adaptive_halting.min_train_keep_k must be >= 1, got {self.min_train_keep_k}")
         self.halt_tolerance = halt_tolerance
         self.halt_keep_ks = list(halt_keep_ks)
         self.n_action_steps = n_action_steps
@@ -285,6 +303,7 @@ class OATPolicy(BasePolicy):
         topk: Optional[int],
         adaptive_min_k: int,
         entropy_threshold: Optional[float] = None,
+        eos_probability_threshold: Optional[float] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         B = features.shape[0]
         device = features.device
@@ -292,6 +311,8 @@ class OATPolicy(BasePolicy):
         if entropy_threshold is None:
             entropy_threshold = self.entropy_threshold
         entropy_threshold = float(entropy_threshold)
+        if eos_probability_threshold is None:
+            eos_probability_threshold = self.eos_probability_threshold
 
         generated_action_tokens = torch.zeros(
             (B, max_action_tokens),
@@ -336,6 +357,22 @@ class OATPolicy(BasePolicy):
                 topk=topk,
             )
             last_entropy = entropy
+
+            can_stop = (~finished) & (step >= adaptive_min_k)
+            eos_probability_stop = torch.zeros_like(can_stop)
+            if (self.eos_id is not None) and (eos_probability_threshold is not None):
+                eos_probability = probs[:, self.eos_id]
+                eos_probability_stop = can_stop & (eos_probability >= eos_probability_threshold)
+            if eos_probability_stop.any():
+                finished[eos_probability_stop] = True
+                eos_generated[eos_probability_stop] = True
+                token_lens[eos_probability_stop] = step
+                stop_reasons[eos_probability_stop] = self.stop_reason_eos_probability
+                entropy_at_stop[eos_probability_stop] = entropy[eos_probability_stop]
+
+            active = ~finished
+            if not active.any():
+                break
 
             can_stop = (~finished) & (step >= adaptive_min_k)
             entropy_stop = can_stop & (entropy < entropy_threshold)
@@ -396,6 +433,9 @@ class OATPolicy(BasePolicy):
 
         keep_ks = sorted(int(k) for k in self.halt_keep_ks)
         max_keep_k = keep_ks[-1]
+        allowed_keep_ks = [keep_k for keep_k in keep_ks if keep_k >= self.min_train_keep_k]
+        if len(allowed_keep_ks) == 0:
+            allowed_keep_ks = [max_keep_k]
         B = action_tokens.shape[0]
         device = action_tokens.device
 
@@ -419,7 +459,7 @@ class OATPolicy(BasePolicy):
         entropy_at_stop = entropies[:, max_keep_k].to(torch.float32)
         finished = torch.zeros(B, dtype=torch.bool, device=device)
 
-        for keep_k in keep_ks:
+        for keep_k in allowed_keep_ks:
             step_entropy = entropies[:, keep_k]
             step_prediction = predicted_tokens[:, keep_k]
             active = ~finished
@@ -515,6 +555,7 @@ class OATPolicy(BasePolicy):
         adaptive_halting: Optional[bool] = None,
         adaptive_min_k: int = 1,
         entropy_threshold: Optional[float] = None,
+        eos_probability_threshold: Optional[float] = None,
     ) -> Dict[str, torch.Tensor]:
         if use_k_tokens is None:
             use_k_tokens = self.max_seq_len
@@ -543,6 +584,7 @@ class OATPolicy(BasePolicy):
                     topk=topk,
                     adaptive_min_k=adaptive_min_k,
                     entropy_threshold=entropy_threshold,
+                    eos_probability_threshold=eos_probability_threshold,
                 )
             )
         else:
@@ -598,6 +640,18 @@ class OATPolicy(BasePolicy):
             'adaptive_min_k': torch.tensor(int(adaptive_min_k), device=token_lens.device),
             'entropy_threshold': torch.tensor(
                 float(self.entropy_threshold if entropy_threshold is None else entropy_threshold),
+                dtype=features.dtype,
+                device=token_lens.device,
+            ),
+            'eos_probability_threshold': torch.tensor(
+                float(
+                    self.eos_probability_threshold
+                    if eos_probability_threshold is None
+                    else eos_probability_threshold
+                ) if (
+                    (self.eos_probability_threshold is not None)
+                    or (eos_probability_threshold is not None)
+                ) else float("nan"),
                 dtype=features.dtype,
                 device=token_lens.device,
             ),

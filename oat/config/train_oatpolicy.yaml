@@ -51,6 +51,7 @@ policy:
     # Threshold 6.5 is calibrated to produce a non-degenerate oracle (avg K ~ 6.9)
     # on LIBERO. Lower thresholds result in full-length (K=8) oracles.
     train_entropy_threshold: 6.5
+    min_train_keep_k: 1
     use_dynamic_threshold: false
   halt_tolerance: 1.0e-3
   halt_keep_ks: [1, 2, 4, 8]

@@ -1,0 +1,5 @@
+oatpolicy_rgb initialized with
+  obs enc: 22.4M (100.00000% trainable)
+  act tok: 0.7M (0.00000% trainable)
+  policy : 0.8M (100.00000% trainable)
+
