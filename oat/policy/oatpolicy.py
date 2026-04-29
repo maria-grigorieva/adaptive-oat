@@ -188,6 +188,7 @@ class OATPolicy(BasePolicy):
         self,
         generated_tokens: torch.Tensor,
         max_action_tokens: int,
+        adaptive_min_k: int = 1,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         B, generated_len = generated_tokens.shape
         device = generated_tokens.device
@@ -206,9 +207,13 @@ class OATPolicy(BasePolicy):
             eos_generated = torch.zeros(B, dtype=torch.bool, device=device)
             return decode_tokens, token_lens, eos_generated
 
+        adaptive_min_k = int(adaptive_min_k)
+        adaptive_min_k = max(1, min(adaptive_min_k, max_action_tokens))
         eos_mask = generated_tokens == self.eos_id
-        has_eos = eos_mask.any(dim=1)
-        first_eos_idx = eos_mask.to(torch.int64).argmax(dim=1)
+        token_positions = torch.arange(generated_len, device=device).unsqueeze(0)
+        valid_eos_mask = eos_mask & (token_positions >= adaptive_min_k)
+        has_eos = valid_eos_mask.any(dim=1)
+        first_eos_idx = valid_eos_mask.to(torch.int64).argmax(dim=1)
         token_lens = torch.where(
             has_eos,
             first_eos_idx,
@@ -217,8 +222,8 @@ class OATPolicy(BasePolicy):
         token_lens = token_lens.clamp(min=0, max=max_action_tokens)
         eos_generated = has_eos & (first_eos_idx <= max_action_tokens)
 
-        token_positions = torch.arange(max_action_tokens, device=device).unsqueeze(0)
-        decode_tokens[token_positions >= token_lens.unsqueeze(1)] = 0
+        action_token_positions = torch.arange(max_action_tokens, device=device).unsqueeze(0)
+        decode_tokens[action_token_positions >= token_lens.unsqueeze(1)] = 0
         return decode_tokens, token_lens, eos_generated
 
     def _oracle_keep_k_from_batch(self, batch) -> torch.Tensor:
@@ -276,6 +281,7 @@ class OATPolicy(BasePolicy):
         temperature: Optional[float] = None,
         topk: Optional[int] = None,
         adaptive_halting: Optional[bool] = None,
+        adaptive_min_k: int = 1,
     ) -> Dict[str, torch.Tensor]:
         if use_k_tokens is None:
             use_k_tokens = self.max_seq_len
@@ -305,12 +311,13 @@ class OATPolicy(BasePolicy):
             max_new_tokens=use_k_tokens + 1 if adaptive_halting else use_k_tokens,
             temperature=temperature,
             top_k=topk,
-            eos_id=self.eos_id if adaptive_halting else None,
+            eos_id=self.eos_id if adaptive_halting and adaptive_min_k <= 1 else None,
         )[:, 1:]    # drop <BOS>
 
         decode_tokens, token_lens, eos_generated = self.extract_action_prefix(
             generated_tokens=generated_tokens,
             max_action_tokens=use_k_tokens,
+            adaptive_min_k=adaptive_min_k,
         )
 
         # decode action tokens
@@ -329,6 +336,7 @@ class OATPolicy(BasePolicy):
             'action_tokens': decode_tokens,
             'token_lens': token_lens,
             'eos_generated': eos_generated,
+            'adaptive_min_k': torch.tensor(int(adaptive_min_k), device=token_lens.device),
         }
         return result
 

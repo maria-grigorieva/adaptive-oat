@@ -40,6 +40,7 @@ from typing import List, Optional
 @click.option('--topk', default=None, type=int, help="topk for policy inference")
 @click.option('--use_k_tokens', default=None, type=int, help="number of tokens to use for policy inference")
 @click.option('--adaptive-halting/--no-adaptive-halting', default=False, help="enable EOS-based adaptive halting")
+@click.option('--adaptive-min-k', default=1, type=int, help="ignore adaptive EOS before this prefix depth")
 @click.option('--force', is_flag=True, help="overwrite output_dir without prompting")
 @click.option('--libero-task-name', default=None, type=str, help="override LiberoRunner task_name")
 @click.option('--libero-task-limit', default=None, type=int, help="limit the number of LIBERO subtasks")
@@ -57,6 +58,7 @@ def eval_policy_sim(
     topk: Optional[int] = None,
     use_k_tokens: Optional[int] = None,
     adaptive_halting: bool = False,
+    adaptive_min_k: int = 1,
     force: bool = False,
     libero_task_name: Optional[str] = None,
     libero_task_limit: Optional[int] = None,
@@ -130,6 +132,7 @@ def eval_policy_sim(
             kwargs['use_k_tokens'] = use_k_tokens
         if adaptive_halting:
             kwargs['adaptive_halting'] = True
+            kwargs['adaptive_min_k'] = adaptive_min_k
         run_start_time = time.perf_counter()
         runner_log = env_runner.run(
             policy,
@@ -179,6 +182,7 @@ def eval_policy_sim(
         json_log['libero_task_limit'] = int(getattr(env_runner_cfg, 'task_limit', 0) or 0)
         json_log['libero_episodes_per_task'] = int(getattr(env_runner_cfg, 'episodes_per_task', 0) or 0)
         json_log['libero_n_test'] = int(getattr(env_runner_cfg, 'n_test', 0) or 0)
+        json_log['adaptive_min_k'] = int(adaptive_min_k)
         
         # Add mean values
         for key, value in mean_log.items():
@@ -212,6 +216,7 @@ def eval_policy_sim(
                 'policy_use_adaptive_halting': bool(policy.use_adaptive_halting),
                 'eos_token_id': policy.eos_id,
                 'max_action_tokens': policy.max_seq_len,
+                'adaptive_min_k': int(adaptive_min_k),
                 'mean_action_tokens': float(json_log.get('mean_action_tokens_mean', 0.0)),
                 'token_ratio': float(json_log.get('token_ratio_mean', 0.0)),
                 'eos_prediction_rate': float(json_log.get('eos_prediction_rate_mean', 0.0)),

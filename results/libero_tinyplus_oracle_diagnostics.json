@@ -1,0 +1,26 @@
+{
+  "dataset": "data/libero/libero_spatial_tinyplus.zarr",
+  "keep_ks": [
+    1,
+    2,
+    4,
+    8
+  ],
+  "mean_oracle_k": 2.26018675721562,
+  "num_action_chunks": 2356,
+  "oracle_k_distribution": {
+    "1": 0.7966893039049237,
+    "2": 0.0050933786078098476,
+    "4": 0.03310696095076401,
+    "8": 0.16511035653650255
+  },
+  "oracle_reconstruction_mse": 0.26595975790039994,
+  "prefix_reconstruction_mse": {
+    "1": 0.2662596273503198,
+    "2": 0.26627980590069034,
+    "4": 0.2663038404364335,
+    "8": 0.26632648898709205
+  },
+  "tokenizer_checkpoint": "/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260428/232508_train_oattok_tinyplus_cpu_libero_spatial_tinyplus/checkpoints/latest.ckpt",
+  "tolerance": 0.001
+}

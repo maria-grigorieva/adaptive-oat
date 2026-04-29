@@ -1,0 +1,12 @@
+metric,value
+num_action_chunks,2356
+mean_oracle_k,2.26018675721562
+oracle_recon_mse,0.26595975790039994
+oracle_dist_k_1,0.7966893039049237
+oracle_dist_k_2,0.0050933786078098476
+oracle_dist_k_4,0.03310696095076401
+oracle_dist_k_8,0.16511035653650255
+fixed_recon_mse_k_1,0.2662596273503198
+fixed_recon_mse_k_2,0.26627980590069034
+fixed_recon_mse_k_4,0.2663038404364335
+fixed_recon_mse_k_8,0.26632648898709205

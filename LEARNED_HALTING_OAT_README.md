@@ -216,6 +216,24 @@ python scripts/eval_policy_sim.py \
   --libero-max-episode-steps 300
 ```
 
+If the adaptive policy collapses to stopping too early, you can keep the learned EOS path but ignore EOS before a minimum prefix depth:
+
+```bash
+python scripts/eval_policy_sim.py \
+  --checkpoint /absolute/path/to/oatpolicy.ckpt \
+  --output_dir output/eval/libero_spatial_tiny_adaptive_min2 \
+  --device cpu \
+  --num_exp 1 \
+  --adaptive-halting \
+  --adaptive-min-k 2 \
+  --libero-task-name libero_spatial_tiny \
+  --libero-task-limit 1 \
+  --libero-episodes-per-task 1 \
+  --libero-n-test-vis 0 \
+  --libero-n-parallel-envs 1 \
+  --libero-max-episode-steps 300
+```
+
 ### Limitations
 
 - This tiny path is for smoke testing only, not for benchmark-quality learning curves.

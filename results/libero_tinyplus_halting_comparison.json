@@ -1,0 +1,31 @@
+{
+  "absolute_mean_gap": 1.1063406033694654,
+  "adaptive_diagnostics_path": "output/eval/libero_spatial_tinyplus_adaptive/eos_diagnostics.json",
+  "collapse_reason": "Predicted K is heavily concentrated at K<=2 while oracle mass still assigns non-trivial probability to deeper prefixes.",
+  "collapse_warning": true,
+  "distribution_l1_distance": 0.39643463497453324,
+  "oracle_distribution": {
+    "1": 0.7966893039049234,
+    "2": 0.005093378607809847,
+    "3": 0.0,
+    "4": 0.033106960950764,
+    "5": 0.0,
+    "6": 0.0,
+    "7": 0.0,
+    "8": 0.16511035653650252
+  },
+  "oracle_mass_k_ge_4": 0.1982173174872665,
+  "oracle_mean_k": 2.260186757215619,
+  "predicted_distribution": {
+    "1": 0.8461538461538461,
+    "2": 0.15384615384615385,
+    "3": 0.0,
+    "4": 0.0,
+    "5": 0.0,
+    "6": 0.0,
+    "7": 0.0,
+    "8": 0.0
+  },
+  "predicted_mass_k_le_2": 1.0,
+  "predicted_mean_k": 1.1538461538461537
+}

@@ -1,0 +1,8 @@
+metric,value
+oracle_mean_k,2.260186757215619
+predicted_mean_k,1.1538461538461537
+absolute_mean_gap,1.1063406033694654
+distribution_l1_distance,0.39643463497453324
+predicted_mass_k_le_2,1.0
+oracle_mass_k_ge_4,0.1982173174872665
+collapse_warning,1

@@ -1,0 +1,43 @@
+{
+  "dataset": "data/libero/libero_spatial_tinyplus.zarr",
+  "methods": [
+    {
+      "avg_K": 1.0,
+      "method": "fixed_k_1",
+      "recon_mse": 0.2662596273503198,
+      "token_ratio": 0.125
+    },
+    {
+      "avg_K": 2.0,
+      "method": "fixed_k_2",
+      "recon_mse": 0.26627980590069034,
+      "token_ratio": 0.25
+    },
+    {
+      "avg_K": 4.0,
+      "method": "fixed_k_4",
+      "recon_mse": 0.2663038404364335,
+      "token_ratio": 0.5
+    },
+    {
+      "avg_K": 8.0,
+      "method": "fixed_k_8",
+      "recon_mse": 0.26632648898709205,
+      "token_ratio": 1.0
+    },
+    {
+      "avg_K": 2.26018675721562,
+      "method": "oracle_k",
+      "recon_mse": 0.26595975790039994,
+      "token_ratio": 0.2825233446519525
+    },
+    {
+      "avg_K": 1.1538461538461537,
+      "method": "adaptive_predicted_k",
+      "recon_mse": 0.2662627317426845,
+      "token_ratio": 0.14423076923076922
+    }
+  ],
+  "notes": "adaptive_predicted_k uses the rollout-predicted K distribution from the adaptive LIBERO evaluation, not per-sample policy predictions on the dataset.",
+  "tokenizer_checkpoint": "/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260428/232508_train_oattok_tinyplus_cpu_libero_spatial_tinyplus/checkpoints/latest.ckpt"
+}
