@@ -31,6 +31,7 @@ class OATPolicy(BasePolicy):
         temperature: float = 1.0,
         topk: int = 10,
         use_adaptive_halting: bool = False,
+        adaptive_halting: Optional[Dict] = None,
         entropy_threshold: float = 0.5,
         halt_tolerance: float = 1e-3,
         halt_keep_ks: Optional[List[int]] = None,
@@ -93,6 +94,24 @@ class OATPolicy(BasePolicy):
         self.eos_id = eos_id
         self.use_adaptive_halting = use_adaptive_halting
         self.entropy_threshold = float(entropy_threshold)
+        self.train_entropy_threshold = float(entropy_threshold)
+        self.adaptive_halting_type = "mse"
+        self.use_dynamic_threshold = False
+        if adaptive_halting is not None:
+            self.adaptive_halting_type = str(adaptive_halting.get("type", "mse"))
+            self.entropy_threshold = float(
+                adaptive_halting.get("entropy_threshold", self.entropy_threshold)
+            )
+            self.train_entropy_threshold = float(
+                adaptive_halting.get("train_entropy_threshold", self.entropy_threshold)
+            )
+            self.use_dynamic_threshold = bool(
+                adaptive_halting.get("use_dynamic_threshold", False)
+            )
+        if self.adaptive_halting_type not in {"mse", "entropy"}:
+            raise ValueError(
+                f"adaptive_halting.type must be 'mse' or 'entropy', got {self.adaptive_halting_type}"
+            )
         self.halt_tolerance = halt_tolerance
         self.halt_keep_ks = list(halt_keep_ks)
         self.n_action_steps = n_action_steps
@@ -355,13 +374,93 @@ class OATPolicy(BasePolicy):
 
         return generated_action_tokens, token_lens, eos_generated, entropy_at_stop, stop_reasons
 
-    def _oracle_keep_k_from_batch(self, batch) -> torch.Tensor:
+    def _compute_mse_based_oracle_from_batch(self, batch) -> torch.Tensor:
         oracle_keep_k, _ = self.action_tokenizer.compute_oracle_keep_k_from_samples(
             samples=batch['action'],
             keep_ks=self.halt_keep_ks,
             tolerance=self.halt_tolerance,
         )
         return oracle_keep_k.to(device=batch['action'].device, dtype=torch.long)
+
+    def _compute_entropy_based_oracle(
+        self,
+        action_tokens: torch.Tensor,
+        features: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not self.use_adaptive_halting:
+            raise RuntimeError("Entropy oracle requires adaptive halting to be enabled")
+
+        keep_ks = sorted(int(k) for k in self.halt_keep_ks)
+        max_keep_k = keep_ks[-1]
+        B = action_tokens.shape[0]
+        device = action_tokens.device
+
+        bos_tokens = torch.full((B, 1), self.bos_id, dtype=torch.long, device=device)
+        teacher_forced_tokens = torch.cat([bos_tokens, action_tokens], dim=1)
+
+        with torch.no_grad():
+            logits = self.model(teacher_forced_tokens, cond=features.detach())
+
+        probs = F.softmax(logits, dim=-1)
+        entropies = -(probs * probs.clamp_min(1e-12).log()).sum(dim=-1)
+        predicted_tokens = torch.argmax(probs, dim=-1)
+
+        oracle_keep_k = torch.full((B,), max_keep_k, dtype=torch.long, device=device)
+        stop_reasons = torch.full(
+            (B,),
+            self.stop_reason_max_k,
+            dtype=torch.long,
+            device=device,
+        )
+        entropy_at_stop = entropies[:, max_keep_k].to(torch.float32)
+        finished = torch.zeros(B, dtype=torch.bool, device=device)
+
+        for keep_k in keep_ks:
+            step_entropy = entropies[:, keep_k]
+            step_prediction = predicted_tokens[:, keep_k]
+            active = ~finished
+            eos_stop = active & (step_prediction == self.eos_id)
+            if eos_stop.any():
+                oracle_keep_k[eos_stop] = keep_k
+                stop_reasons[eos_stop] = self.stop_reason_eos
+                entropy_at_stop[eos_stop] = step_entropy[eos_stop].to(torch.float32)
+                finished[eos_stop] = True
+
+            entropy_stop = (~finished) & (step_entropy < self.train_entropy_threshold)
+            if entropy_stop.any():
+                oracle_keep_k[entropy_stop] = keep_k
+                stop_reasons[entropy_stop] = self.stop_reason_entropy
+                entropy_at_stop[entropy_stop] = step_entropy[entropy_stop].to(torch.float32)
+                finished[entropy_stop] = True
+
+        return oracle_keep_k, entropy_at_stop, stop_reasons
+
+    def _compute_training_oracle(
+        self,
+        batch: Dict[str, torch.Tensor],
+        action_tokens: torch.Tensor,
+        features: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if self.adaptive_halting_type == "entropy":
+            return self._compute_entropy_based_oracle(
+                action_tokens=action_tokens,
+                features=features,
+            )
+
+        oracle_keep_k = self._compute_mse_based_oracle_from_batch(batch)
+        stop_reasons = torch.full(
+            oracle_keep_k.shape,
+            self.stop_reason_max_k,
+            dtype=torch.long,
+            device=oracle_keep_k.device,
+        )
+        entropy_at_stop = torch.full(
+            oracle_keep_k.shape,
+            float("nan"),
+            dtype=features.dtype,
+            device=oracle_keep_k.device,
+        )
+        return oracle_keep_k, entropy_at_stop, stop_reasons
 
     def get_optimizer(
         self, 
@@ -500,8 +599,6 @@ class OATPolicy(BasePolicy):
         with torch.inference_mode():
             action_tokens = self.action_tokenizer.tokenize(batch['action'])
             oracle_keep_k = None
-            if self.use_adaptive_halting:
-                oracle_keep_k = self._oracle_keep_k_from_batch(batch)
 
         B = batch['action'].shape[0]
         device = batch['action'].device
@@ -510,6 +607,11 @@ class OATPolicy(BasePolicy):
         features = self.obs_encoder(batch['obs'])   # [B, To, d]
 
         if self.use_adaptive_halting:
+            oracle_keep_k, entropy_at_stop, stop_reasons = self._compute_training_oracle(
+                batch=batch,
+                action_tokens=action_tokens,
+                features=features,
+            )
             model_tokens, target_tokens, target_mask = self.build_adaptive_training_batch(
                 action_tokens=action_tokens,
                 oracle_keep_k=oracle_keep_k,
@@ -523,11 +625,23 @@ class OATPolicy(BasePolicy):
             )
             mean_keep_k = oracle_keep_k.to(torch.float32).mean()
             token_ratio = mean_keep_k / float(self.max_seq_len)
+            valid_entropy_mask = torch.isfinite(entropy_at_stop)
+            if valid_entropy_mask.any():
+                mean_stop_entropy = entropy_at_stop[valid_entropy_mask].mean()
+                stop_entropy_count = valid_entropy_mask.to(torch.float32).sum()
+            else:
+                mean_stop_entropy = torch.tensor(0.0, device=device)
+                stop_entropy_count = torch.tensor(0.0, device=device)
             self._last_forward_info = {
                 'mean_keep_k': mean_keep_k.detach(),
                 'token_ratio': token_ratio.detach(),
                 'batch_size': torch.tensor(float(B), device=device),
                 'target_mask_tokens': target_mask.sum().to(torch.float32).detach(),
+                'mean_stop_entropy': mean_stop_entropy.detach(),
+                'stop_entropy_count': stop_entropy_count.detach(),
+                'stop_reason_eos': (stop_reasons == self.stop_reason_eos).to(torch.float32).sum().detach(),
+                'stop_reason_entropy': (stop_reasons == self.stop_reason_entropy).to(torch.float32).sum().detach(),
+                'stop_reason_max_k': (stop_reasons == self.stop_reason_max_k).to(torch.float32).sum().detach(),
             }
         else:
             # prepend <BOS> token
@@ -552,5 +666,10 @@ class OATPolicy(BasePolicy):
                 'mean_keep_k': torch.tensor(float(self.max_seq_len), device=device),
                 'token_ratio': torch.tensor(1.0, device=device),
                 'batch_size': torch.tensor(float(B), device=device),
+                'mean_stop_entropy': torch.tensor(0.0, device=device),
+                'stop_entropy_count': torch.tensor(0.0, device=device),
+                'stop_reason_eos': torch.tensor(0.0, device=device),
+                'stop_reason_entropy': torch.tensor(0.0, device=device),
+                'stop_reason_max_k': torch.tensor(float(B), device=device),
             }
         return loss

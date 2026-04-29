@@ -185,7 +185,9 @@ class TrainPolicyWorkspace(BaseWorkspace):
                     self.ema_model.train()
 
                 loss_info = torch.zeros(2, device=device)   # [total loss, total batch_size]
-                halt_info = torch.zeros(3, device=device)   # [sum keep_k, sum token_ratio, total batch_size]
+                halt_info = torch.zeros(8, device=device)
+                # [sum keep_k, sum token_ratio, total batch_size, sum stop_entropy,
+                #  count stop_entropy, count eos, count entropy_stop, count max_k]
                 with tqdm.tqdm(
                     train_dataloader, 
                     desc=f"Training epoch {self.epoch}",
@@ -214,6 +216,11 @@ class TrainPolicyWorkspace(BaseWorkspace):
                             halt_info[0] += model_info['mean_keep_k'] * batch_size
                             halt_info[1] += model_info['token_ratio'] * batch_size
                             halt_info[2] += batch_size
+                            halt_info[3] += model_info['mean_stop_entropy'] * model_info['stop_entropy_count']
+                            halt_info[4] += model_info['stop_entropy_count']
+                            halt_info[5] += model_info['stop_reason_eos']
+                            halt_info[6] += model_info['stop_reason_entropy']
+                            halt_info[7] += model_info['stop_reason_max_k']
 
                             # step optimizer
                             if accelerator.sync_gradients:
@@ -267,6 +274,11 @@ class TrainPolicyWorkspace(BaseWorkspace):
                     if halt_info[2].item() > 0:
                         step_log['train_mean_keep_k'] = (halt_info[0] / halt_info[2]).item()
                         step_log['train_token_ratio'] = (halt_info[1] / halt_info[2]).item()
+                        if halt_info[4].item() > 0:
+                            step_log['train_mean_entropy_at_stop'] = (halt_info[3] / halt_info[4]).item()
+                        step_log['train_stop_reason_eos'] = (halt_info[5] / halt_info[2]).item()
+                        step_log['train_stop_reason_entropy_low'] = (halt_info[6] / halt_info[2]).item()
+                        step_log['train_stop_reason_max_k'] = (halt_info[7] / halt_info[2]).item()
 
                 # ========= eval for this epoch ==========
                 policy = accelerator.unwrap_model(self.model)
@@ -285,7 +297,9 @@ class TrainPolicyWorkspace(BaseWorkspace):
                 # run validation
                 if (self.epoch % cfg.training.val_every) == 0:
                     loss_info = torch.zeros(2, device=device)   # [total loss, total batch_size]
-                    halt_info = torch.zeros(3, device=device)   # [sum keep_k, sum token_ratio, total batch_size]
+                    halt_info = torch.zeros(8, device=device)
+                    # [sum keep_k, sum token_ratio, total batch_size, sum stop_entropy,
+                    #  count stop_entropy, count eos, count entropy_stop, count max_k]
                     with torch.inference_mode():
                         with tqdm.tqdm(
                             val_dataloader, 
@@ -310,6 +324,11 @@ class TrainPolicyWorkspace(BaseWorkspace):
                                 halt_info[0] += model_info['mean_keep_k'] * batch_size
                                 halt_info[1] += model_info['token_ratio'] * batch_size
                                 halt_info[2] += batch_size
+                                halt_info[3] += model_info['mean_stop_entropy'] * model_info['stop_entropy_count']
+                                halt_info[4] += model_info['stop_entropy_count']
+                                halt_info[5] += model_info['stop_reason_eos']
+                                halt_info[6] += model_info['stop_reason_entropy']
+                                halt_info[7] += model_info['stop_reason_max_k']
 
                                 # break if reach max val steps
                                 if (cfg.training.max_val_steps is not None) \
@@ -326,6 +345,11 @@ class TrainPolicyWorkspace(BaseWorkspace):
                         if halt_info[2].item() > 0:
                             step_log['val_mean_keep_k'] = (halt_info[0] / halt_info[2]).item()
                             step_log['val_token_ratio'] = (halt_info[1] / halt_info[2]).item()
+                            if halt_info[4].item() > 0:
+                                step_log['val_mean_entropy_at_stop'] = (halt_info[3] / halt_info[4]).item()
+                            step_log['val_stop_reason_eos'] = (halt_info[5] / halt_info[2]).item()
+                            step_log['val_stop_reason_entropy_low'] = (halt_info[6] / halt_info[2]).item()
+                            step_log['val_stop_reason_max_k'] = (halt_info[7] / halt_info[2]).item()
 
                 # action prediction eval
                 if self.epoch % cfg.training.sample_every == 0:

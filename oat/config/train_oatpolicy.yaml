@@ -45,6 +45,10 @@ policy:
   temperature: 1.0
   topk: 10
   use_adaptive_halting: false
+  adaptive_halting:
+    type: entropy
+    entropy_threshold: 0.5
+    use_dynamic_threshold: false
   halt_tolerance: 1.0e-3
   halt_keep_ks: [1, 2, 4, 8]
 
