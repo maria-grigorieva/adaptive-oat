@@ -1,0 +1,3 @@
+method,checkpoint,success_rate,avg_token_length,token_ratio,eos_prediction_rate,early_stop_rate,runtime_sec,task_limit,episodes_per_task,pred_keep_k_4,pred_keep_k_8,notes
+fixed_k_8,/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260429/231342_train_oatpolicy_object_medium_fixed_cpu_libero_object_medium/checkpoints/latest.ckpt,0.0,8.0,1.0,0.0,0.0,232.05611895595212,3,2,0.0,1.0,"Fixed-length medium object-suite baseline on libero_object_N100"
+adaptive_entropy_mink4,/Users/maria/MIPT/AOPT_assignment/adaptive-oat/output/20260429/232241_train_oatpolicy_object_medium_adaptive_cpu_libero_object_medium/checkpoints/latest.ckpt,0.0,4.0,0.5,1.0,1.0,220.31831589294598,3,2,1.0,0.0,"Entropy adaptive halting with min_train_keep_k=4 and adaptive_min_k=4"

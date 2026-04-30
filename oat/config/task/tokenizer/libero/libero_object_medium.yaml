@@ -1,0 +1,18 @@
+name: libero_object_medium
+
+task_name: libero_object_medium
+
+shape_meta: &shape_meta
+  action:
+    shape: [7]
+
+
+dataset:
+  _target_: oat.dataset.zarr_dataset.ZarrDataset
+  zarr_path: data/libero/libero_object_N100.zarr
+  obs_keys: []
+  action_key: action
+  n_obs_steps: 0
+  n_action_steps: ${horizon}
+  seed: ${seed}
+  val_ratio: 0.1

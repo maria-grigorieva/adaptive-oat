@@ -6,6 +6,9 @@ MT_TASKS = {
     'libero90': libero_task_map['libero_90'],
     'libero_spatial': libero_task_map['libero_spatial'],
     'libero_spatial_tiny': libero_task_map['libero_spatial'],
+    'libero_object': libero_task_map['libero_object'],
+    'libero_object_medium': libero_task_map['libero_object'],
+    'libero_goal': libero_task_map['libero_goal'],
 }
 
 def is_multitask(task_name: str) -> bool:
